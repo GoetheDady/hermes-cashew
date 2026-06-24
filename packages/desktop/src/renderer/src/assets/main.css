@@ -1,0 +1,9 @@
+@import 'tailwindcss';
+
+/* 让根容器铺满整个窗口，聊天界面在其中纵向布局。 */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}

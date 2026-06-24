@@ -1,0 +1,16 @@
+{
+  "name": "hermes-desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Hermes 聊天桌面客户端（MVP）—— Electron 前端 ↔ Node 后端 ↔ Hermes API",
+  "scripts": {
+    "dev:backend": "pnpm --filter @hermes/backend dev",
+    "dev:desktop": "pnpm --filter @hermes/desktop dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.28.2"
+}
