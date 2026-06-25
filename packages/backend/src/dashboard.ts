@@ -8,6 +8,8 @@ import { join } from 'node:path'
 export interface DashboardConnection {
   /** 上游 JSON-RPC WebSocket 地址，已带鉴权 token。 */
   wsUrl: string
+  /** 上游 HTTP 基址（如 `http://127.0.0.1:NNNN`），用于代理 REST 请求。 */
+  httpBase: string
   /** 由后端持有的会话 token（前端不接触）。 */
   token: string
 }
@@ -50,7 +52,12 @@ export function startDashboard(): Promise<DashboardConnection> {
     const wsUrl = token && !override.includes('token=')
       ? `${override}${override.includes('?') ? '&' : '?'}token=${token}`
       : override
-    return Promise.resolve({ wsUrl, token })
+    // 从 ws(s):// 推导 http(s):// 基址（去掉路径与查询）。
+    const httpBase = override
+      .replace(/^ws/, 'http')
+      .replace(/\/api\/ws.*$/, '')
+      .replace(/\?.*$/, '')
+    return Promise.resolve({ wsUrl, httpBase, token })
   }
 
   // spawn 模式：自己生成 token 并启动子进程。
@@ -81,7 +88,11 @@ export function startDashboard(): Promise<DashboardConnection> {
         settled = true
         clearTimeout(timer)
         const port = m[1]
-        resolve({ wsUrl: `ws://127.0.0.1:${port}/api/ws?token=${token}`, token })
+        resolve({
+          wsUrl: `ws://127.0.0.1:${port}/api/ws?token=${token}`,
+          httpBase: `http://127.0.0.1:${port}`,
+          token,
+        })
       }
     })
 
