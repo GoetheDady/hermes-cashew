@@ -2,6 +2,8 @@
 
 @plugin "tailwindcss-animate";
 
+@source "../../../../node_modules/streamdown/dist/*.js";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -127,6 +129,18 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/*
+ * Streamdown 自带完整的 Tailwind 间距样式（my-4 / mt-6 / p-4 等），
+ * 通过上面的 @source 让 Tailwind 扫描 dist 生成对应 CSS。
+ * 这里只做气泡级的首尾边距收口，避免内容顶到气泡上下边缘。
+ */
+.streamdown-bubble > :first-child {
+  margin-top: 0;
+}
+.streamdown-bubble > :last-child {
+  margin-bottom: 0;
 }
 
 /* 让根容器铺满整个窗口，聊天界面在其中纵向布局。 */
