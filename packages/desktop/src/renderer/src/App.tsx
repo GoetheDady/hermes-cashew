@@ -11,6 +11,11 @@ import type {
   SessionSummary
 } from '@hermes/shared'
 import { type ConnectionState, GatewayClient } from './lib/gateway-client'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Badge } from '@/components/ui/badge'
 
 /** 后端 WS 代理地址。前端只连后端，由后端再桥接到 Hermes dashboard。 */
 const BACKEND_WS = 'ws://localhost:8765/ws'
@@ -48,7 +53,8 @@ function App(): React.JSX.Element {
 
   const clientRef = useRef<GatewayClient | null>(null)
   const sessionIdRef = useRef<string>('')
-  const scrollRef = useRef<HTMLDivElement>(null)
+  // 滚动锚点：始终滚动到该元素可见，配合 ScrollArea 工作。
+  const bottomRef = useRef<HTMLDivElement>(null)
   // 用 ref 镜像 isStreaming，供回调内同步读取（避免闭包拿到旧值）。
   const isStreamingRef = useRef(false)
   useEffect(() => {
@@ -141,7 +147,7 @@ function App(): React.JSX.Element {
 
   // 每次消息变化滚到底部。
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' })
   }, [messages])
 
   /** 发送当前输入：本地入列 + `prompt.submit`，回复走事件流。 */
@@ -169,74 +175,87 @@ function App(): React.JSX.Element {
   const canSend = ready && !isStreaming && input.trim() !== ''
 
   return (
-    <div className="flex h-full bg-zinc-950 text-zinc-100">
+    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* 左栏：新建按钮 + 会话历史列表 */}
-      <aside className="flex w-60 flex-col border-r border-zinc-800 bg-zinc-900/50">
+      <aside className="flex w-60 flex-col border-r">
         <div className="p-3">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
             onClick={newSession}
             disabled={!ready || isStreaming}
-            className="w-full rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium hover:bg-zinc-800 disabled:opacity-40"
           >
             ＋ 新建会话
-          </button>
+          </Button>
         </div>
-        <div className="px-2 pb-1 text-xs font-medium text-zinc-500">会话历史</div>
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
-          {sessions.length === 0 && (
-            <p className="px-2 py-3 text-xs text-zinc-600">暂无历史会话</p>
-          )}
-          {sessions.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => selectSession(s.id)}
-              disabled={isStreaming}
-              title={s.title || s.preview || s.id}
-              className={
-                'block w-full truncate rounded-md px-2 py-2 text-left text-sm disabled:opacity-50 ' +
-                (s.id === activeStoredId ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/60')
-              }
-            >
-              {s.title || s.preview || '未命名会话'}
-            </button>
-          ))}
-        </nav>
+        <div className="px-2 pb-1 text-xs font-medium text-muted-foreground">会话历史</div>
+        <ScrollArea className="min-h-0 flex-1">
+          <nav className="space-y-0.5 px-2 pb-3">
+            {sessions.length === 0 && (
+              <p className="px-2 py-3 text-xs text-muted-foreground">暂无历史会话</p>
+            )}
+            {sessions.map((s) => (
+              <Button
+                key={s.id}
+                variant={s.id === activeStoredId ? 'secondary' : 'ghost'}
+                size="sm"
+                className="w-full justify-start truncate"
+                onClick={() => selectSession(s.id)}
+                disabled={isStreaming}
+                title={s.title || s.preview || s.id}
+              >
+                {s.title || s.preview || '未命名会话'}
+              </Button>
+            ))}
+          </nav>
+        </ScrollArea>
       </aside>
 
       {/* 右栏：对话区 */}
-      <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex items-center justify-between border-b px-4 py-3">
           <h1 className="text-sm font-semibold">Hermes</h1>
           <StatusBadge conn={conn} ready={ready} />
         </header>
 
-        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-          {messages.length === 0 && (
-            <p className="mt-20 text-center text-sm text-zinc-500">
-              {ready ? '开始和 Hermes 对话吧' : '正在连接 Hermes…'}
-            </p>
-          )}
-          {messages.map((m, i) => (
-            <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-3 px-4 py-4">
+            {messages.length === 0 && (
+              <p className="mt-20 text-center text-sm text-muted-foreground">
+                {ready ? '开始和 Hermes 对话吧' : '正在连接 Hermes…'}
+              </p>
+            )}
+            {messages.map((m, i) => (
               <div
-                className={
-                  'max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm ' +
-                  (m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-100')
-                }
+                key={i}
+                className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
               >
-                {m.content || (isStreaming ? '…' : '')}
+                <div
+                  className={cn(
+                    'max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm',
+                    m.role === 'user'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'border border-border bg-card text-card-foreground'
+                  )}
+                >
+                  {m.content || (isStreaming ? '…' : '')}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+        </ScrollArea>
 
         {error && (
-          <div className="mx-4 mb-2 rounded bg-red-950 px-3 py-2 text-xs text-red-300">{error}</div>
+          <div className="mx-4 mb-2 rounded bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {error}
+          </div>
         )}
 
-        <footer className="border-t border-zinc-800 p-3">
+        <footer className="border-t p-3">
           <div className="flex gap-2">
-            <textarea
+            <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -248,15 +267,11 @@ function App(): React.JSX.Element {
               }}
               rows={1}
               placeholder={ready ? '输入消息，Enter 发送，Shift+Enter 换行' : '连接中…'}
-              className="flex-1 resize-none rounded-lg bg-zinc-800 px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+              className="flex-1 resize-none min-h-0"
             />
-            <button
-              onClick={sendMessage}
-              disabled={!canSend}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-            >
+            <Button size="sm" onClick={sendMessage} disabled={!canSend}>
               发送
-            </button>
+            </Button>
           </div>
         </footer>
       </div>
@@ -267,10 +282,26 @@ function App(): React.JSX.Element {
 /** 右上角连接状态小标。 */
 function StatusBadge({ conn, ready }: { conn: ConnectionState; ready: boolean }): React.JSX.Element {
   const label =
-    conn === 'open' && ready ? '已连接' : conn === 'connecting' ? '连接中' : conn === 'open' ? '握手中' : '已断开'
-  const color =
-    conn === 'open' && ready ? 'text-green-400' : conn === 'closed' || conn === 'error' ? 'text-red-400' : 'text-zinc-400'
-  return <span className={`text-xs ${color}`}>{label}</span>
+    conn === 'open' && ready
+      ? '已连接'
+      : conn === 'connecting'
+        ? '连接中'
+        : conn === 'open'
+          ? '握手中'
+          : '已断开'
+
+  const variant =
+    conn === 'open' && ready
+      ? 'default'
+      : conn === 'closed' || conn === 'error'
+        ? 'destructive'
+        : 'secondary'
+
+  return (
+    <Badge variant={variant} className="text-xs">
+      {label}
+    </Badge>
+  )
 }
 
 /** 把增量文本追加到最后一条 assistant 消息。 */
