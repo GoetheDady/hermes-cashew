@@ -9,6 +9,12 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { MessageBubble } from '@/components/message-bubble'
 import { LoaderCircle, RotateCcw } from 'lucide-react'
 
+/** 后端 HTTP 基址，用于连接异常时做最薄的可达性分类。 */
+const BACKEND_HTTP = 'http://localhost:8765'
+
+/** 本地后端健康检查状态。 */
+type BackendHealth = 'idle' | 'checking' | 'available' | 'unavailable'
+
 /**
  * 聊天页面：打开即进入新的 Hermes 对话。
  *
@@ -23,6 +29,7 @@ export function Chat(): React.JSX.Element {
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [hasActiveSession, setHasActiveSession] = useState(false)
   const [sessionRetryKey, setSessionRetryKey] = useState(0)
+  const [backendHealth, setBackendHealth] = useState<BackendHealth>('idle')
 
   /** 共享的运行时 session_id ref：当前页面创建，useConversation 读取。 */
   const sessionIdRef = useRef<string>('')
@@ -70,7 +77,12 @@ export function Chat(): React.JSX.Element {
       .request<SessionCreateResult>('session.create', { source: 'hermes-desktop' })
       .then((res) => {
         sessionIdRef.current = res.session_id
-        setMessages(mapHistory(res.messages))
+        const initialMessages = mapHistory(res.messages)
+        // Gateway Reconnect 后会创建新的运行时会话；若 dashboard 没返回可见消息，
+        // 不清空用户已经看到的 transcript，避免一次恢复动作看起来像丢上下文。
+        setMessages((prev) =>
+          prev.length === 0 || initialMessages.length > 0 ? initialMessages : prev
+        )
         setHasActiveSession(true)
         window.setTimeout(() => inputRef.current?.focus(), 0)
       })
@@ -87,23 +99,54 @@ export function Chat(): React.JSX.Element {
     bottomRef.current?.scrollIntoView({ behavior: 'instant' })
   }, [messages])
 
-  // ── 发送消息 ──
-  const handleSend = useCallback(() => {
-    const text = input.trim()
-    if (!text) return
-    clearCombinedError()
-    sendMessage(text)
-    setInput('')
-  }, [input, sendMessage, clearCombinedError])
-
   const hasConnectionProblem = conn === 'closed' || conn === 'error'
   const canSend = ready && hasActiveSession && !isSessionStarting && !isStreaming && input.trim() !== ''
-  const statusText = sessionError ?? gatewayError ?? conversationError
+  const connectionText =
+    hasConnectionProblem && backendHealth === 'unavailable'
+      ? '本地 Hermes 后端不可用，请确认后端已启动'
+      : hasConnectionProblem
+        ? '连接已断开'
+        : null
+  const statusText = sessionError ?? gatewayError ?? conversationError ?? connectionText
   const placeholder = !ready
     ? '正在连接 Hermes…'
     : isSessionStarting
       ? '正在开启新对话…'
       : '问 Hermes 点什么…'
+
+  // 只在连接异常时探测后端健康；健康状态是文案分类，不参与 token 或 dashboard 细节。
+  useEffect(() => {
+    if (!hasConnectionProblem) {
+      setBackendHealth('idle')
+      return
+    }
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 1500)
+    setBackendHealth('checking')
+
+    checkBackendHealth(controller.signal)
+      .then((available) => setBackendHealth(available ? 'available' : 'unavailable'))
+      .catch(() => setBackendHealth('unavailable'))
+      .finally(() => window.clearTimeout(timer))
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [hasConnectionProblem])
+
+  // ── 发送消息 ──
+  const handleSend = useCallback(() => {
+    const text = input.trim()
+    if (!canSend) return
+    clearCombinedError()
+    sendMessage(text)
+      .then(() => setInput(''))
+      .catch(() => {
+        inputRef.current?.focus()
+      })
+  }, [input, canSend, sendMessage, clearCombinedError])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -134,11 +177,9 @@ export function Chat(): React.JSX.Element {
         </ScrollArea>
       </div>
 
-      {(statusText || hasConnectionProblem) && (
+      {statusText && (
         <div className="mx-auto mb-2 flex w-full max-w-3xl items-center justify-between gap-3 px-4 text-xs">
-          <span className="min-w-0 break-words text-destructive">
-            {statusText ?? '连接已断开'}
-          </span>
+          <span className="min-w-0 break-words text-destructive">{statusText}</span>
           {hasConnectionProblem ? (
             <Button
               variant="ghost"
@@ -243,4 +284,15 @@ function mapHistory(history: GatewayMessage[] | undefined): ChatMessage[] {
   return history
     .filter((m) => (m.role === 'user' || m.role === 'assistant') && (m.text ?? '').trim() !== '')
     .map((m) => ({ role: m.role as ChatMessage['role'], parts: [textPart(m.text ?? '')] }))
+}
+
+/**
+ * 检查本地后端是否能响应健康检查。
+ *
+ * @param signal - 取消请求的 AbortSignal
+ * @returns 后端 `/api/health` 是否可用
+ */
+async function checkBackendHealth(signal: AbortSignal): Promise<boolean> {
+  const res = await fetch(`${BACKEND_HTTP}/api/health`, { signal })
+  return res.ok
 }
