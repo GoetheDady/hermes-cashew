@@ -19,11 +19,11 @@ type BackendHealth = 'idle' | 'checking' | 'available' | 'unavailable'
 /** 页面级微动效参数：短、轻、低位移。 */
 const softTransition = { duration: 0.22, ease: 'easeOut' } as const
 
-const idleInputShadow = '0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent)'
+const idleInputShadow = '0 6px 18px color-mix(in oklch, var(--foreground) 7%, transparent), 0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent)'
 const focusedInputShadow = [
-  '0 0 0 3px color-mix(in oklch, var(--ring) 14%, transparent), 0 8px 20px color-mix(in oklch, var(--foreground) 7%, transparent)',
-  '0 0 0 5px color-mix(in oklch, var(--ring) 22%, transparent), 0 12px 28px color-mix(in oklch, var(--foreground) 10%, transparent)',
-  '0 0 0 3px color-mix(in oklch, var(--ring) 14%, transparent), 0 8px 20px color-mix(in oklch, var(--foreground) 7%, transparent)'
+  '0 0 0 1px color-mix(in oklch, var(--ring) 10%, transparent), 0 12px 30px color-mix(in oklch, var(--foreground) 9%, transparent), 0 0 22px color-mix(in oklch, var(--primary) 9%, transparent)',
+  '0 0 0 1px color-mix(in oklch, var(--ring) 14%, transparent), 0 18px 46px color-mix(in oklch, var(--foreground) 13%, transparent), 0 0 36px color-mix(in oklch, var(--primary) 15%, transparent)',
+  '0 0 0 1px color-mix(in oklch, var(--ring) 10%, transparent), 0 12px 30px color-mix(in oklch, var(--foreground) 9%, transparent), 0 0 22px color-mix(in oklch, var(--primary) 9%, transparent)'
 ]
 
 /**
@@ -244,7 +244,7 @@ export function Chat(): React.JSX.Element {
             }
             transition={
               isInputFocused && !reducedMotion
-                ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
+                ? { duration: 2.2, repeat: Infinity, ease: 'easeInOut' }
                 : softTransition
             }
           >
