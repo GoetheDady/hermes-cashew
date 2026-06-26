@@ -2,9 +2,14 @@ import { createServer, type ServerResponse } from 'node:http'
 import 'dotenv/config'
 import { type DashboardConnection, startDashboard, stopDashboard } from './dashboard.js'
 import { attachProxy } from './proxy.js'
+import { openStateDb } from './db.js'
+import { handleListSessions } from './routes/sessions.js'
 
 /** 后端自身监听端口，默认 8765。 */
 const PORT = Number(process.env.PORT ?? 8765)
+
+/** 只读打开的 Hermes state.db 实例（模块级，供退出钩子关闭）。 */
+let db: ReturnType<typeof openStateDb> = null
 
 /** dashboard 鉴权 header 名（与 hermes web_server 的 _SESSION_HEADER_NAME 一致）。 */
 const SESSION_HEADER = 'X-Hermes-Session-Token'
@@ -35,6 +40,7 @@ async function proxySessionMessages(
  * 在 `/api/health` 提供健康检查、在 `/ws` 挂 WebSocket 桥接代理。
  */
 async function main(): Promise<void> {
+  db = openStateDb()
   const conn = await startDashboard()
   console.log(`[backend] dashboard 就绪 → ${conn.wsUrl.replace(/token=[^&]+/, 'token=***')}`)
 
@@ -52,6 +58,13 @@ async function main(): Promise<void> {
     if (req.url === '/api/health') {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ status: 'ok' }))
+      return
+    }
+
+    // 分页会话列表：直读 Hermes 本地的 state.db。
+    const sessionsMatch = req.url?.match(/^\/api\/sessions\/?\??/)
+    if (sessionsMatch && req.method === 'GET' && !req.url?.includes('/messages')) {
+      handleListSessions(req.url!, res, db)
       return
     }
 
@@ -78,9 +91,10 @@ async function main(): Promise<void> {
   })
 }
 
-// 进程退出时清理 dashboard 子进程，避免遗留孤儿。
+// 进程退出时清理 dashboard 子进程和数据库连接，避免遗留孤儿。
 for (const sig of ['exit', 'SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
+    db?.close()
     stopDashboard()
     if (sig !== 'exit') process.exit(0)
   })
