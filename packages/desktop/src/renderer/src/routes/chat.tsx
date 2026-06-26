@@ -19,6 +19,13 @@ type BackendHealth = 'idle' | 'checking' | 'available' | 'unavailable'
 /** 页面级微动效参数：短、轻、低位移。 */
 const softTransition = { duration: 0.22, ease: 'easeOut' } as const
 
+const idleInputShadow = '0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent)'
+const focusedInputShadow = [
+  '0 0 0 3px color-mix(in oklch, var(--ring) 14%, transparent), 0 8px 20px color-mix(in oklch, var(--foreground) 7%, transparent)',
+  '0 0 0 5px color-mix(in oklch, var(--ring) 22%, transparent), 0 12px 28px color-mix(in oklch, var(--foreground) 10%, transparent)',
+  '0 0 0 3px color-mix(in oklch, var(--ring) 14%, transparent), 0 8px 20px color-mix(in oklch, var(--foreground) 7%, transparent)'
+]
+
 /**
  * 聊天页面：打开即进入新的 Hermes 对话。
  *
@@ -232,12 +239,14 @@ export function Chat(): React.JSX.Element {
               reducedMotion
                 ? undefined
                 : {
-                    boxShadow: isInputFocused
-                      ? '0 0 0 3px color-mix(in oklch, var(--ring) 18%, transparent), 0 10px 24px color-mix(in oklch, var(--foreground) 8%, transparent)'
-                      : '0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent)'
+                    boxShadow: isInputFocused ? focusedInputShadow : idleInputShadow
                   }
             }
-            transition={softTransition}
+            transition={
+              isInputFocused && !reducedMotion
+                ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
+                : softTransition
+            }
           >
             <Textarea
               ref={inputRef}
