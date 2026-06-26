@@ -26,19 +26,38 @@ export class GatewayClient {
    * 连接到网关 WebSocket。
    *
    * @param url - WS 地址（如 `ws://localhost:8765/ws`）
+   * @returns 无返回值；连接状态通过 `onState()` 通知订阅方
    */
   connect(url: string): void {
+    const previous = this.socket
+    if (previous) {
+      this.socket = null
+      previous.close()
+      this.rejectAll(new Error('连接已重置'))
+    }
+
     this.setState('connecting')
     const socket = new WebSocket(url)
     this.socket = socket
 
-    socket.addEventListener('open', () => this.setState('open'))
+    socket.addEventListener('open', () => {
+      if (this.socket !== socket) return
+      this.setState('open')
+    })
     socket.addEventListener('close', () => {
+      if (this.socket !== socket) return
+      this.socket = null
       this.setState('closed')
       this.rejectAll(new Error('连接已关闭'))
     })
-    socket.addEventListener('error', () => this.setState('error'))
-    socket.addEventListener('message', (ev) => this.handleFrame(String(ev.data)))
+    socket.addEventListener('error', () => {
+      if (this.socket !== socket) return
+      this.setState('error')
+    })
+    socket.addEventListener('message', (ev) => {
+      if (this.socket !== socket) return
+      this.handleFrame(String(ev.data))
+    })
   }
 
   /**
@@ -92,10 +111,19 @@ export class GatewayClient {
     return () => this.stateHandlers.delete(handler)
   }
 
-  /** 关闭连接。 */
+  /**
+   * 主动关闭当前连接。
+   *
+   * @returns 无返回值；关闭后的状态变化通过 `onState()` 通知订阅方
+   */
   close(): void {
-    this.socket?.close()
+    const socket = this.socket
+    if (!socket) return
+
     this.socket = null
+    socket.close()
+    this.rejectAll(new Error('连接已关闭'))
+    this.setState('closed')
   }
 
   private state: ConnectionState = 'connecting'

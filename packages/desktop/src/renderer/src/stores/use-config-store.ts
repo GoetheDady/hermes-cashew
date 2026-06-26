@@ -1,5 +1,10 @@
 import { create } from 'zustand'
-import type { ModelOptionProvider, ModelOptionsResult, ReasoningConfigResult, ReasoningLevel } from '@hermes/shared'
+import type {
+  ModelOptionProvider,
+  ModelOptionsResult,
+  ReasoningConfigResult,
+  ReasoningLevel
+} from '@hermes/shared'
 import { REASONING_LEVELS } from '@hermes/shared'
 import type { GatewayClient } from '@/lib/gateway-client'
 
@@ -68,12 +73,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         providers: result.providers ?? [],
         currentModel: result.model ?? '',
         currentProvider: result.provider ?? '',
-        modelsLoading: false,
+        modelsLoading: false
       })
     } catch (e) {
       set({
         modelsLoading: false,
-        modelsError: e instanceof Error ? e.message : '获取模型列表失败',
+        modelsError: e instanceof Error ? e.message : '获取模型列表失败'
       })
     }
   },
@@ -83,16 +88,16 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     set({ reasoningLoading: true, reasoningError: null })
     try {
       const result = await client.request<ReasoningConfigResult>('config.get', {
-        key: 'reasoning',
+        key: 'reasoning'
       })
       set({
         reasoningEffort: parseReasoning(result.value),
-        reasoningLoading: false,
+        reasoningLoading: false
       })
     } catch (e) {
       set({
         reasoningLoading: false,
-        reasoningError: e instanceof Error ? e.message : '获取思考强度失败',
+        reasoningError: e instanceof Error ? e.message : '获取思考强度失败'
       })
     }
   },
@@ -107,7 +112,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     try {
       await client.request('config.set', {
         key: 'model',
-        value: modelValue(modelId, providerSlug),
+        value: modelValue(modelId, providerSlug)
       })
       // 选中后刷新 provider 列表以更新 is_current 标记
       try {
@@ -115,7 +120,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         set({
           providers: refreshed.providers ?? [],
           currentModel: refreshed.model ?? get().currentModel,
-          currentProvider: refreshed.provider ?? get().currentProvider,
+          currentProvider: refreshed.provider ?? get().currentProvider
         })
       } catch {
         /* 刷新失败不阻塞，保持乐观状态 */
@@ -137,12 +142,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     try {
       await client.request('config.set', {
         key: 'reasoning',
-        value: effort,
+        value: effort
       })
     } catch (e) {
       // 回滚
       set({ reasoningEffort: prev })
       throw e
     }
-  },
+  }
 }))
