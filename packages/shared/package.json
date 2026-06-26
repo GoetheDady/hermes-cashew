@@ -10,9 +10,11 @@
   },
   "scripts": {
     "test": "tsx --test src/*.test.ts",
+    "lint": "eslint --cache .",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "typescript": "^5.9.3"
   }
 }

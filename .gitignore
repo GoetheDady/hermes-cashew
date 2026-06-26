@@ -8,3 +8,4 @@ build/
 .env.local
 packages/desktop/release/
 packages/desktop/dist/
+.eslintcache

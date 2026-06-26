@@ -25,7 +25,8 @@ export default defineConfig(
     },
     rules: {
       ...eslintPluginReactHooks.configs.recommended.rules,
-      ...eslintPluginReactRefresh.configs.vite.rules
+      ...eslintPluginReactRefresh.configs.vite.rules,
+      'max-lines': ['warn', { max: 300, skipBlankLines: true, skipComments: true }]
     }
   },
   eslintConfigPrettier
