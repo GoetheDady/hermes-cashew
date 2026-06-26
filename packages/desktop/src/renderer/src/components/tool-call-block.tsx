@@ -4,7 +4,7 @@ import { motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
 
 /** tool call 块进入动画：轻微出现即可，避免像日志面板一样突兀。 */
-const toolCallTransition = { duration: 0.18, ease: 'easeOut' } as const
+const toolCallTransition = { duration: 0.22, ease: 'easeOut' } as const
 
 /**
  * 把未知值格式化为工具详情文本。
@@ -59,7 +59,7 @@ export function ToolCallBlock({ part }: { part: ToolCallPart }): React.JSX.Eleme
         'my-2 rounded-lg border bg-muted/30 text-xs',
         isError ? 'border-destructive/30 bg-destructive/5' : 'border-border'
       )}
-      initial={reducedMotion ? false : { opacity: 0, y: 4 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={toolCallTransition}
       open={defaultOpen}

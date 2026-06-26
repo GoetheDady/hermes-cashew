@@ -3,7 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
 
 /** thinking 块进入/展开的低幅度过渡，保持内容阅读稳定。 */
-const thinkingTransition = { duration: 0.18, ease: 'easeOut' } as const
+const thinkingTransition = { duration: 0.22, ease: 'easeOut' } as const
 
 /**
  * 可折叠思考块，显示在 assistant 回复正文上方。
@@ -86,7 +86,7 @@ export function ThinkingBlock({
   return (
     <motion.div
       className="my-2"
-      initial={reducedMotion ? false : { opacity: 0, y: 4 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={thinkingTransition}
     >

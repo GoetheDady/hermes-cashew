@@ -17,7 +17,7 @@ const BACKEND_HTTP = 'http://localhost:8765'
 type BackendHealth = 'idle' | 'checking' | 'available' | 'unavailable'
 
 /** 页面级微动效参数：短、轻、低位移。 */
-const softTransition = { duration: 0.2, ease: 'easeOut' } as const
+const softTransition = { duration: 0.22, ease: 'easeOut' } as const
 
 /**
  * 聊天页面：打开即进入新的 Hermes 对话。
@@ -307,6 +307,26 @@ function EmptyConversation({
                 : { opacity: [0.35, 0.9, 0.35], scale: [1, 1.18, 1] }
             }
             transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        )}
+        {(ready && !isSessionStarting) && (
+          <motion.span
+            className="size-2 rounded-full bg-primary/55 shadow-[0_0_0_4px_color-mix(in_oklch,var(--primary)_12%,transparent)]"
+            aria-hidden="true"
+            animate={
+              reducedMotion
+                ? undefined
+                : {
+                    opacity: [0.55, 0.95, 0.55],
+                    scale: [1, 1.14, 1],
+                    boxShadow: [
+                      '0 0 0 3px color-mix(in oklch, var(--primary) 10%, transparent)',
+                      '0 0 0 7px color-mix(in oklch, var(--primary) 16%, transparent)',
+                      '0 0 0 3px color-mix(in oklch, var(--primary) 10%, transparent)'
+                    ]
+                  }
+            }
+            transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
           />
         )}
         <span>{text}</span>

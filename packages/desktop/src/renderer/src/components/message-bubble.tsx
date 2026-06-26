@@ -6,7 +6,7 @@ import { ThinkingBlock } from './thinking-block'
 import { ToolCallBlock } from './tool-call-block'
 
 /** 轻量消息进入动画：只做低幅度透明度/位移，避免打扰阅读。 */
-const messageEnterTransition = { duration: 0.18, ease: 'easeOut' } as const
+const messageEnterTransition = { duration: 0.22, ease: 'easeOut' } as const
 
 /**
  * 单条消息气泡。user 右对齐，assistant 左对齐。
@@ -31,7 +31,7 @@ export function MessageBubble({
   return (
     <motion.div
       className="flex justify-start"
-      initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={messageEnterTransition}
       layout={!reducedMotion}
