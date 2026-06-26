@@ -143,6 +143,12 @@
   margin-bottom: 0;
 }
 
+/* streamdown 外层 table wrapper 不强制撑满宽度 */
+div[style*='min-width: 100%'][style*='display: table'] {
+  min-width: unset !important;
+  display: block !important;
+}
+
 /* 让根容器铺满整个窗口，聊天界面在其中纵向布局。 */
 html,
 body,

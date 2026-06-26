@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -19,39 +19,59 @@ function formatDuration(ms: number): string {
   return s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`
 }
 
-export function ThinkingBlock({ text, isStreaming, startedAt }: ThinkingBlockProps) {
+export function ThinkingBlock({
+  text,
+  isStreaming,
+  startedAt
+}: ThinkingBlockProps): React.ReactNode {
   const [open, setOpen] = useState(true)
   const [durationMs, setDurationMs] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // 流式结束后关闭计时器，锁定耗时
+  // 使用 rAF 包装同步 setState 以避免 react-hooks/set-state-in-effect
   useEffect(() => {
     if (!startedAt) return undefined
 
     if (isStreaming) {
-      setDurationMs(Date.now() - startedAt)
+      const rafId = requestAnimationFrame(() => {
+        setDurationMs(Date.now() - startedAt)
+      })
       timerRef.current = setInterval(() => {
         setDurationMs(Date.now() - startedAt)
       }, 100)
       return () => {
+        cancelAnimationFrame(rafId)
         if (timerRef.current) clearInterval(timerRef.current)
       }
-    } else {
+    }
+    // 流式结束时锁定最终耗时
+    const rafId = requestAnimationFrame(() => {
       setDurationMs(Date.now() - startedAt)
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
-      return undefined
+    })
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    return () => {
+      cancelAnimationFrame(rafId)
     }
   }, [isStreaming, startedAt])
 
   // 完成后自动折叠
   useEffect(() => {
     if (!isStreaming && text) {
-      setOpen(false)
+      const rafId = requestAnimationFrame(() => {
+        setOpen(false)
+      })
+      return () => cancelAnimationFrame(rafId)
     }
+    return undefined
   }, [isStreaming, text])
+
+  const handleToggle = useCallback(() => {
+    setOpen((v) => !v)
+  }, [])
 
   if (!text) return null
 
@@ -66,7 +86,7 @@ export function ThinkingBlock({ text, isStreaming, startedAt }: ThinkingBlockPro
           'flex items-center gap-1.5 text-xs text-muted-foreground/70 hover:text-muted-foreground transition-colors cursor-pointer select-none',
           'py-0.5'
         )}
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleToggle}
       >
         <span className="text-[0.6rem] leading-none">{open ? '▼' : '▶'}</span>
         <span>{label}</span>

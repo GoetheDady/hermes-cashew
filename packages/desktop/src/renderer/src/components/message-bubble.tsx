@@ -39,11 +39,16 @@ export function MessageBubble({
           <div className="space-y-1">
             {message.parts.map((part, index) => {
               if (part.type === 'text') {
-                return part.text ? (
+                if (!part.text) return null
+                return isUser ? (
+                  <div key={index} className="whitespace-pre-wrap break-words">
+                    {part.text}
+                  </div>
+                ) : (
                   <Streamdown key={index} isAnimating={isStreaming}>
                     {part.text}
                   </Streamdown>
-                ) : null
+                )
               }
 
               if (part.type === 'reasoning') {
