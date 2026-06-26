@@ -1,8 +1,12 @@
 import type { ChatMessage } from '@hermes/shared'
 import { Streamdown } from 'streamdown'
+import { motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { ThinkingBlock } from './thinking-block'
 import { ToolCallBlock } from './tool-call-block'
+
+/** 轻量消息进入动画：只做低幅度透明度/位移，避免打扰阅读。 */
+const messageEnterTransition = { duration: 0.18, ease: 'easeOut' } as const
 
 /**
  * 单条消息气泡。user 右对齐，assistant 左对齐。
@@ -22,9 +26,16 @@ export function MessageBubble({
   thinkingStartedAt
 }: MessageBubbleProps): React.JSX.Element {
   const isUser = message.role === 'user'
+  const reducedMotion = useReducedMotion()
 
   return (
-    <div className="flex justify-start">
+    <motion.div
+      className="flex justify-start"
+      initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={messageEnterTransition}
+      layout={!reducedMotion}
+    >
       <div
         className={cn(
           'max-w-full rounded-2xl px-3 py-1.5 text-sm',
@@ -66,9 +77,15 @@ export function MessageBubble({
             })}
           </div>
         ) : isStreaming ? (
-          <span className="text-muted-foreground/50">…</span>
+          <motion.span
+            className="inline-block text-muted-foreground/50"
+            animate={reducedMotion ? undefined : { opacity: [0.35, 0.8, 0.35] }}
+            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            …
+          </motion.span>
         ) : null}
       </div>
-    </div>
+    </motion.div>
   )
 }

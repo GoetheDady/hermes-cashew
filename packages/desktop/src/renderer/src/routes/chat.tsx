@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatMessage, GatewayMessage, SessionCreateResult } from '@hermes/shared'
 import { textPart } from '@hermes/shared'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useGateway } from '@/hooks/use-gateway'
 import { useConversation } from '@/hooks/use-conversation'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { MessageBubble } from '@/components/message-bubble'
-import { LoaderCircle, RotateCcw } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 
 /** 后端 HTTP 基址，用于连接异常时做最薄的可达性分类。 */
 const BACKEND_HTTP = 'http://localhost:8765'
 
 /** 本地后端健康检查状态。 */
 type BackendHealth = 'idle' | 'checking' | 'available' | 'unavailable'
+
+/** 页面级微动效参数：短、轻、低位移。 */
+const softTransition = { duration: 0.2, ease: 'easeOut' } as const
 
 /**
  * 聊天页面：打开即进入新的 Hermes 对话。
@@ -30,6 +34,8 @@ export function Chat(): React.JSX.Element {
   const [hasActiveSession, setHasActiveSession] = useState(false)
   const [sessionRetryKey, setSessionRetryKey] = useState(0)
   const [backendHealth, setBackendHealth] = useState<BackendHealth>('idle')
+  const [isInputFocused, setIsInputFocused] = useState(false)
+  const reducedMotion = useReducedMotion()
 
   /** 共享的运行时 session_id ref：当前页面创建，useConversation 读取。 */
   const sessionIdRef = useRef<string>('')
@@ -177,46 +183,68 @@ export function Chat(): React.JSX.Element {
         </ScrollArea>
       </div>
 
-      {statusText && (
-        <div className="mx-auto mb-2 flex w-full max-w-3xl items-center justify-between gap-3 px-4 text-xs">
-          <span className="min-w-0 break-words text-destructive">{statusText}</span>
-          {hasConnectionProblem ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 shrink-0 gap-1.5 px-2 text-xs"
-              onClick={() => {
-                clearCombinedError()
-                reconnect()
-              }}
-            >
-              <RotateCcw className="size-3" />
-              重试连接
-            </Button>
-          ) : sessionError ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 shrink-0 gap-1.5 px-2 text-xs"
-              onClick={() => {
-                setSessionError(null)
-                setSessionRetryKey((key) => key + 1)
-              }}
-            >
-              <RotateCcw className="size-3" />
-              重试开启
-            </Button>
-          ) : null}
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {statusText && (
+          <motion.div
+            className="mx-auto mb-2 flex w-full max-w-3xl items-center justify-between gap-3 px-4 text-xs"
+            initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
+            transition={softTransition}
+          >
+            <span className="min-w-0 break-words text-destructive">{statusText}</span>
+            {hasConnectionProblem ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 shrink-0 gap-1.5 px-2 text-xs"
+                onClick={() => {
+                  clearCombinedError()
+                  reconnect()
+                }}
+              >
+                <RotateCcw className="size-3" />
+                重试连接
+              </Button>
+            ) : sessionError ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 shrink-0 gap-1.5 px-2 text-xs"
+                onClick={() => {
+                  setSessionError(null)
+                  setSessionRetryKey((key) => key + 1)
+                }}
+              >
+                <RotateCcw className="size-3" />
+                重试开启
+              </Button>
+            ) : null}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <footer className="p-3">
         <div className="mx-auto max-w-3xl">
-          <div className="rounded-xl border bg-card px-3 pb-2.5 pt-2.5 shadow-sm">
+          <motion.div
+            className="rounded-xl border bg-card px-3 pb-2.5 pt-2.5 shadow-sm"
+            animate={
+              reducedMotion
+                ? undefined
+                : {
+                    boxShadow: isInputFocused
+                      ? '0 0 0 3px color-mix(in oklch, var(--ring) 18%, transparent), 0 10px 24px color-mix(in oklch, var(--foreground) 8%, transparent)'
+                      : '0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent)'
+                  }
+            }
+            transition={softTransition}
+          >
             <Textarea
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => setIsInputFocused(false)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
@@ -233,7 +261,7 @@ export function Chat(): React.JSX.Element {
                 发送
               </Button>
             </div>
-          </div>
+          </motion.div>
         </div>
       </footer>
     </div>
@@ -254,6 +282,7 @@ function EmptyConversation({
   ready: boolean
   isSessionStarting: boolean
 }): React.JSX.Element {
+  const reducedMotion = useReducedMotion()
   const text = !ready
     ? '正在连接 Hermes…'
     : isSessionStarting
@@ -261,12 +290,28 @@ function EmptyConversation({
       : '开始和 Hermes 对话吧'
 
   return (
-    <div className="flex flex-1 items-center justify-center py-16">
+    <motion.div
+      className="flex flex-1 items-center justify-center py-16"
+      initial={reducedMotion ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={softTransition}
+    >
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        {(!ready || isSessionStarting) && <LoaderCircle className="size-4 animate-spin" />}
+        {(!ready || isSessionStarting) && (
+          <motion.span
+            className="size-2 rounded-full bg-muted-foreground/60"
+            aria-hidden="true"
+            animate={
+              reducedMotion
+                ? undefined
+                : { opacity: [0.35, 0.9, 0.35], scale: [1, 1.18, 1] }
+            }
+            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        )}
         <span>{text}</span>
       </div>
-    </div>
+    </motion.div>
   )
 }
 

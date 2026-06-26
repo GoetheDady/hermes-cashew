@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
+
+/** thinking 块进入/展开的低幅度过渡，保持内容阅读稳定。 */
+const thinkingTransition = { duration: 0.18, ease: 'easeOut' } as const
 
 /**
  * 可折叠思考块，显示在 assistant 回复正文上方。
@@ -27,6 +31,7 @@ export function ThinkingBlock({
   const [open, setOpen] = useState(true)
   const [durationMs, setDurationMs] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const reducedMotion = useReducedMotion()
 
   // 流式结束后关闭计时器，锁定耗时
   // 使用 rAF 包装同步 setState 以避免 react-hooks/set-state-in-effect
@@ -79,7 +84,12 @@ export function ThinkingBlock({
   const label = hasDuration ? `思考中 (${formatDuration(durationMs)})` : '思考中'
 
   return (
-    <div className="my-2">
+    <motion.div
+      className="my-2"
+      initial={reducedMotion ? false : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={thinkingTransition}
+    >
       <button
         type="button"
         className={cn(
@@ -92,13 +102,21 @@ export function ThinkingBlock({
         <span>{label}</span>
       </button>
 
-      {open && (
-        <div className="mt-1 pl-4 border-l-2 border-muted">
-          <div className="text-xs text-muted-foreground/80 whitespace-pre-wrap leading-relaxed">
-            {text}
-          </div>
-        </div>
-      )}
-    </div>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            className="mt-1 border-l-2 border-muted pl-4"
+            initial={reducedMotion ? false : { opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            transition={thinkingTransition}
+          >
+            <div className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground/80">
+              {text}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   )
 }

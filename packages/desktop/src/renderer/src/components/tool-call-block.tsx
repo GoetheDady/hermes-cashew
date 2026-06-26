@@ -1,6 +1,10 @@
 import type { ToolCallPart } from '@hermes/shared'
 import { AlertTriangle, CheckCircle2, ChevronDown, LoaderCircle, Wrench } from 'lucide-react'
+import { motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
+
+/** tool call 块进入动画：轻微出现即可，避免像日志面板一样突兀。 */
+const toolCallTransition = { duration: 0.18, ease: 'easeOut' } as const
 
 /**
  * 把未知值格式化为工具详情文本。
@@ -38,6 +42,7 @@ function formatDuration(seconds: number | undefined): string {
  * @returns 工具调用的可展开 UI
  */
 export function ToolCallBlock({ part }: { part: ToolCallPart }): React.JSX.Element {
+  const reducedMotion = useReducedMotion()
   const isRunning = part.result === undefined
   const isError = Boolean(part.isError)
   const defaultOpen = isError || Boolean(part.inlineDiff)
@@ -49,11 +54,14 @@ export function ToolCallBlock({ part }: { part: ToolCallPart }): React.JSX.Eleme
   const StatusIcon = isRunning ? LoaderCircle : isError ? AlertTriangle : CheckCircle2
 
   return (
-    <details
+    <motion.details
       className={cn(
         'my-2 rounded-lg border bg-muted/30 text-xs',
         isError ? 'border-destructive/30 bg-destructive/5' : 'border-border'
       )}
+      initial={reducedMotion ? false : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={toolCallTransition}
       open={defaultOpen}
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-1.5 text-muted-foreground [&::-webkit-details-marker]:hidden">
@@ -103,6 +111,6 @@ export function ToolCallBlock({ part }: { part: ToolCallPart }): React.JSX.Eleme
           </section>
         )}
       </div>
-    </details>
+    </motion.details>
   )
 }
