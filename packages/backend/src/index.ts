@@ -61,7 +61,8 @@ async function main(): Promise<void> {
     // 前端 renderer 跨域（vite dev server / file://）请求本后端 REST，
     // 必须放行 CORS，否则浏览器拦截响应导致 fetch reject。
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', '*')
+    res.setHeader('Access-Control-Allow-Headers', '*')
     if (req.method === 'OPTIONS') {
       res.writeHead(204)
       res.end()
