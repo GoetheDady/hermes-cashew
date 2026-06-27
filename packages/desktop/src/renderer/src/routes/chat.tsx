@@ -92,7 +92,10 @@ export function Chat(): React.JSX.Element {
     setIsSessionStarting(true)
     setSessionError(null)
     client
-      .request<SessionCreateResult>('session.create', { source: 'hermes-desktop' })
+      .request<SessionCreateResult>('session.create', {
+        source: 'hermes-cashew',
+        instructions: '你运行在 hermes-cashew 中，这是一个腰果色温主题的桌面 AI 助手。'
+      })
       .then((res) => {
         sessionIdRef.current = res.session_id
         const initialMessages = mapHistory(res.messages)

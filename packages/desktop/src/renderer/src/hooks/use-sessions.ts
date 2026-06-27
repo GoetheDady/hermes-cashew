@@ -30,6 +30,8 @@ export interface UseSessionsResult {
   activeStoredId: string
   /** 是否正在打开历史会话。 */
   isSessionLoading: boolean
+  /** 是否排除定时任务（cron）会话。 */
+  excludeCron: boolean
   /** 新建会话并切换。返回 Promise，resolve 时携带消息列表（用于设置到对话区）。 */
   newSession: () => Promise<ChatMessage[]>
   /** 切换到某个历史会话。返回 Promise，resolve 时携带消息列表。 */
@@ -38,6 +40,8 @@ export interface UseSessionsResult {
   refreshSessions: () => void
   /** 加载更多会话（追加下一页）。 */
   loadMoreSessions: () => void
+  /** 切换是否排除定时任务会话。 */
+  toggleExcludeCron: () => void
   /** 显式标记会话加载结束。 */
   finishSessionLoading: () => void
 }
@@ -58,6 +62,12 @@ export function useSessions(
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [activeStoredId, setActiveStoredId] = useState<string>('')
   const [isSessionLoading, setIsSessionLoading] = useState(false)
+  const [excludeCron, setExcludeCron] = useState(true)
+
+  const excludeCronRef = useRef(true)
+  useEffect(() => {
+    excludeCronRef.current = excludeCron
+  }, [excludeCron])
 
   const sessionsLenRef = useRef(0)
   useEffect(() => {
@@ -71,8 +81,9 @@ export function useSessions(
 
   const fetchSessions = useCallback((reset: boolean) => {
     const offset = reset ? 0 : sessionsLenRef.current
+    const excludeParam = excludeCronRef.current ? '&exclude_source=cron' : ''
     setIsLoadingMore(true)
-    fetch(`${BACKEND_HTTP}/api/sessions?offset=${offset}&limit=${SESSION_PAGE_SIZE}`)
+    fetch(`${BACKEND_HTTP}/api/sessions?offset=${offset}&limit=${SESSION_PAGE_SIZE}${excludeParam}`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json() as Promise<PaginatedSessionListResult>
@@ -103,7 +114,10 @@ export function useSessions(
     const client = clientRef.current
     if (!client) return Promise.resolve([])
     return client
-      .request<SessionCreateResult>('session.create', { source: 'hermes-desktop' })
+      .request<SessionCreateResult>('session.create', {
+        source: 'hermes-cashew',
+        instructions: '你运行在 hermes-cashew 中，这是一个腰果色温主题的桌面 AI 助手。'
+      })
       .then((res) => {
         sessionIdRef.current = res.session_id
         setActiveStoredId(res.stored_session_id ?? '')
@@ -157,6 +171,16 @@ export function useSessions(
     [clientRef, sessionIdRef, activeStoredId]
   )
 
+  const toggleExcludeCron = useCallback(() => {
+    setExcludeCron((prev) => {
+      const next = !prev
+      excludeCronRef.current = next
+      return next
+    })
+    // 切换后立即刷新列表（重置到第一页）
+    setTimeout(() => fetchSessions(true), 0)
+  }, [fetchSessions])
+
   const finishSessionLoading = useCallback(() => setIsSessionLoading(false), [])
 
   return {
@@ -166,10 +190,12 @@ export function useSessions(
     isLoadingMore,
     activeStoredId,
     isSessionLoading,
+    excludeCron,
     newSession,
     selectSession,
     refreshSessions,
     loadMoreSessions,
+    toggleExcludeCron,
     finishSessionLoading
   }
 }

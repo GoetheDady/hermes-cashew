@@ -212,7 +212,7 @@ export function startPresence(conn: DashboardConnection): PresenceController {
       try {
         // 1. 创建临时会话
         const createRes = await rpc.request<{ session_id: string }>('session.create', {
-          source: 'hermes-presence-temp'
+          source: 'hermes-cashew-presence'
         })
         tempSessionId = createRes.session_id
 
