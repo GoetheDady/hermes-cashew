@@ -56,6 +56,7 @@ const NOTIFY_EMPTY_CONTEXT = [
 
 /**
  * 解析 Hermes 返回的通知文案：取第一行有效文本，去引号，截断过长。
+ * 若文本包含 API 错误关键词（余额不足、HTTP 错误码等），回退到兜底文案。
  */
 function parseNotifyText(raw: string): string {
   const line = raw
@@ -64,6 +65,11 @@ function parseNotifyText(raw: string): string {
     .find((l) => l.length > 0)
 
   if (!line) return FALLBACK_NOTIFY[0]
+
+  // 过滤 API 错误文本，不要把 "HTTP 402" 弹给用户看
+  if (/error|insufficient|balance|HTTP\s*\d{3}|timeout|unavailable/i.test(line)) {
+    return FALLBACK_NOTIFY[Math.floor(Math.random() * FALLBACK_NOTIFY.length)]
+  }
 
   const cleaned = line.replace(/^["'""'']|["'""'']$/g, '').trim()
   if (!cleaned) return FALLBACK_NOTIFY[0]
@@ -230,6 +236,12 @@ export function startPresence(conn: DashboardConnection): PresenceController {
             clearTimeout(timeout)
             unsubDelta()
             unsubComplete()
+            const status = (payload as { status?: string } | undefined)?.status
+            // 若 Hermes 返回错误状态（如 402 余额不足），视为失败走兜底
+            if (status === 'error' || status === 'interrupted') {
+              reject(new Error(`生成失败，status=${status}`))
+              return
+            }
             const text = (payload as { text?: string } | undefined)?.text ?? accumulated
             resolve(text)
           })
