@@ -4,6 +4,8 @@ import { type DashboardConnection, startDashboard, stopDashboard } from './dashb
 import { attachProxy } from './proxy.js'
 import { openStateDb } from './db.js'
 import { handleListSessions } from './routes/sessions.js'
+import { handleGetPrompts } from './routes/presence.js'
+import { startPresence, type PresenceController } from './presence.js'
 import { ensureWorkspaceDir } from './workspace.js'
 
 /** 后端自身监听端口，默认 8765。 */
@@ -11,6 +13,9 @@ const PORT = Number(process.env.PORT ?? 8765)
 
 /** 只读打开的 Hermes state.db 实例（模块级，供退出钩子关闭）。 */
 let db: ReturnType<typeof openStateDb> = null
+
+/** PresenceEngine 控制器（模块级，供退出钩子关闭）。 */
+let presence: PresenceController | null = null
 
 /** dashboard 鉴权 header 名（与 hermes web_server 的 _SESSION_HEADER_NAME 一致）。 */
 const SESSION_HEADER = 'X-Hermes-Session-Token'
@@ -48,6 +53,10 @@ async function main(): Promise<void> {
   const conn = await startDashboard()
   console.log(`[backend] dashboard 就绪 → ${conn.wsUrl.replace(/token=[^&]+/, 'token=***')}`)
 
+  // 启动 PresenceEngine：独立的 WS 连接到 dashboard，
+  // 周期性让 Hermes 生成空闲问候语供前端空态轮播展示。
+  presence = startPresence(conn)
+
   const server = createServer((req, res) => {
     // 前端 renderer 跨域（vite dev server / file://）请求本后端 REST，
     // 必须放行 CORS，否则浏览器拦截响应导致 fetch reject。
@@ -69,6 +78,12 @@ async function main(): Promise<void> {
     const sessionsMatch = req.url?.match(/^\/api\/sessions\/?\??/)
     if (sessionsMatch && req.method === 'GET' && !req.url?.includes('/messages')) {
       handleListSessions(req.url!, res, db)
+      return
+    }
+
+    // 空闲问候语：PresenceEngine 生成的动态提示词列表。
+    if (req.url === '/api/presence/prompts' && req.method === 'GET') {
+      handleGetPrompts(req.url!, res, presence!)
       return
     }
 
@@ -95,9 +110,10 @@ async function main(): Promise<void> {
   })
 }
 
-// 进程退出时清理 dashboard 子进程和数据库连接，避免遗留孤儿。
+// 进程退出时清理 PresenceEngine、dashboard 子进程和数据库连接，避免遗留孤儿。
 for (const sig of ['exit', 'SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
+    presence?.stop()
     db?.close()
     stopDashboard()
     if (sig !== 'exit') process.exit(0)
@@ -106,6 +122,7 @@ for (const sig of ['exit', 'SIGINT', 'SIGTERM'] as const) {
 
 main().catch((err) => {
   console.error('[backend] 启动失败:', err instanceof Error ? err.message : err)
+  presence?.stop()
   stopDashboard()
   process.exit(1)
 })

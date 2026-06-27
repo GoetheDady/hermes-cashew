@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { MessageBubble } from '@/components/message-bubble'
+import { EmptyConversation } from '@/components/empty-conversation'
 import { RotateCcw } from 'lucide-react'
 
 /** 后端 HTTP 基址，用于连接异常时做最薄的可达性分类。 */
@@ -274,73 +275,6 @@ export function Chat(): React.JSX.Element {
         </div>
       </footer>
     </div>
-  )
-}
-
-/**
- * 空对话占位：只表达当前对话是否可输入，避免引入历史或设置概念。
- *
- * @param ready - 网关握手是否已完成
- * @param isSessionStarting - 当前新对话是否仍在创建中
- * @returns 空对话状态 React 元素
- */
-function EmptyConversation({
-  ready,
-  isSessionStarting
-}: {
-  ready: boolean
-  isSessionStarting: boolean
-}): React.JSX.Element {
-  const reducedMotion = useReducedMotion()
-  const text = !ready
-    ? '正在连接 Hermes…'
-    : isSessionStarting
-      ? '正在开启新对话…'
-      : '开始和 Hermes 对话吧'
-
-  return (
-    <motion.div
-      className="flex flex-1 items-center justify-center py-16"
-      initial={reducedMotion ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={softTransition}
-    >
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        {(!ready || isSessionStarting) && (
-          <motion.span
-            className="size-2 rounded-full bg-muted-foreground/60"
-            aria-hidden="true"
-            animate={
-              reducedMotion
-                ? undefined
-                : { opacity: [0.35, 0.9, 0.35], scale: [1, 1.18, 1] }
-            }
-            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-          />
-        )}
-        {(ready && !isSessionStarting) && (
-          <motion.span
-            className="size-2 rounded-full bg-primary/55 shadow-[0_0_0_4px_color-mix(in_oklch,var(--primary)_12%,transparent)]"
-            aria-hidden="true"
-            animate={
-              reducedMotion
-                ? undefined
-                : {
-                    opacity: [0.55, 0.95, 0.55],
-                    scale: [1, 1.14, 1],
-                    boxShadow: [
-                      '0 0 0 3px color-mix(in oklch, var(--primary) 10%, transparent)',
-                      '0 0 0 7px color-mix(in oklch, var(--primary) 16%, transparent)',
-                      '0 0 0 3px color-mix(in oklch, var(--primary) 10%, transparent)'
-                    ]
-                  }
-            }
-            transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-          />
-        )}
-        <span>{text}</span>
-      </div>
-    </motion.div>
   )
 }
 
