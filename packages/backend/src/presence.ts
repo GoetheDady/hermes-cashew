@@ -2,66 +2,76 @@ import { WebSocket } from 'ws'
 import type { DashboardConnection } from './dashboard.js'
 
 /**
- * PresenceEngine 控制器：暴露当前提示词缓冲区和停止方法。
+ * PresenceEngine 控制器：暴露按需通知文案生成和停止方法。
  *
- * 前端通过 `GET /api/presence/prompts` 消费 `getPrompts()` 返回的快照，
- * 后端退出时通过 `stop()` 清理 WS 连接和定时器。
+ * 前端通过 `POST /api/presence/notify` 传入对话上下文，
+ * PresenceEngine 用临时会话让 Hermes 生成一句针对性追问后立即删除会话。
  */
 export interface PresenceController {
-  getPrompts(): string[]
+  /**
+   * 根据对话上下文生成一句通知文案。
+   *
+   * 用临时会话一次性完成：session.create → prompt.submit →
+   * 等待 message.complete → session.delete → 返回文案。
+   * 空上下文时 Hermes 生成邀请式问候，有上下文时生成针对性追问。
+   *
+   * @param context - 最近对话摘要（空字符串表示尚无对话）
+   * @returns 通知文案字符串
+   */
+  generateNotify(context: string): Promise<string>
+
+  /** 停止 PresenceEngine：关闭 WS 连接。 */
   stop(): void
 }
 
-/** 环形缓冲区最大容量。 */
-const MAX_BUFFER_SIZE = 10
+/** 生成超时（毫秒）。 */
+const GENERATE_TIMEOUT_MS = 30_000
 
-/** 生成间隔（毫秒）：5 分钟。 */
-const GENERATE_INTERVAL_MS = 5 * 60 * 1000
-
-/** 内置兜底文案：当 Hermes 尚未生成任何内容或全部失败时使用。 */
-const FALLBACK_PROMPTS: string[] = [
-  '有什么想聊的，随时开口。',
-  '我在听。',
-  '任何问题都可以问我。',
-  '今天有什么计划？',
-  '代码、想法，或者随便聊聊。'
+/** 兜底通知文案：当 Hermes 生成失败时使用。 */
+const FALLBACK_NOTIFY: string[] = [
+  '还在吗？',
+  '怎么不理我了？',
+  '你在干什么呢？',
+  '有什么想聊的，随时开口。'
 ]
 
-/**
- * 发送给 Hermes 的生成提示词：让它生成简短、温暖、口语化的中文问候语。
- *
- * 提示词设计要点：
- * - 明确输出格式（每行一条，无编号、无引号、无额外说明），方便解析。
- * - 角色定位为"内心独白"，避免机械的客服话术。
- * - 字数限制 20 字，保证适合在空态中一行展示。
- */
-const GENERATION_PROMPT = [
-  '生成5条简短的问候语，每条不超过20个汉字。',
-  '你就是这个对话助手的内心独白，像一个朋友在旁边等待时随口的轻声话语。',
-  '语气温暖自然，口语化，不要书面语。',
-  '输出格式：每行一条，不要编号，不要引号，不要任何额外说明。'
-].join(' ')
+/** 有上下文时的提示词模板。 */
+const NOTIFY_WITH_CONTEXT = [
+  '以下是你和用户最近的一段对话。用户已经沉默了好几分钟。',
+  '请你生成一句简短的话（不超过25个汉字），像一个朋友发现对方不说话了，轻轻来问一句。',
+  '语气自然、温暖、带一点关心，不要正式、不要客服语气。',
+  '只说这一句话（不要引号、不要说"我可以帮你..."之类的客套话）。',
+  '',
+  '--- 最近对话 ---'
+].join('\n')
+
+/** 无上下文（空态）时的提示词模板。 */
+const NOTIFY_EMPTY_CONTEXT = [
+  '用户打开了对话框但还没开始说话。',
+  '请你生成一句简短的话（不超过25个汉字），像一个朋友在旁边，',
+  '轻轻问一句今天想聊什么、有什么可以帮忙的。',
+  '语气自然、温暖、口语化，不要正式、不要客服语气。',
+  '只说这一句话，不要引号，不要任何额外内容。'
+].join('\n')
 
 /**
- * 解析 Hermes 返回的批量问候语。
- *
- * 按行拆分 → 去除首尾空白 → 过滤空行 → 去掉包裹引号 → 截断过长行。
- *
- * @param raw - Hermes 返回的原始文本
- * @returns 清洗后的问候语数组
+ * 解析 Hermes 返回的通知文案：取第一行有效文本，去引号，截断过长。
  */
-function parsePrompts(raw: string): string[] {
-  return raw
+function parseNotifyText(raw: string): string {
+  const line = raw
     .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => line.replace(/^["'""'']|["'""'']$/g, '').trim())
-    .filter((line) => line.length > 0 && line.length <= 40)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0)
+
+  if (!line) return FALLBACK_NOTIFY[0]
+
+  const cleaned = line.replace(/^["'""'']|["'""'']$/g, '').trim()
+  if (!cleaned) return FALLBACK_NOTIFY[0]
+  return cleaned.length > 40 ? cleaned.slice(0, 40) : cleaned
 }
 
 /**
- * 最小 JSON-RPC 2.0 客户端，仅实现 PresenceEngine 所需的能力：
- * request（发送请求并等待响应）和 onEvent（订阅推送事件）。
+ * 最小 JSON-RPC 2.0 客户端。
  */
 class JsonRpcClient {
   private nextId = 0
@@ -77,36 +87,17 @@ class JsonRpcClient {
     })
   }
 
-  /**
-   * 发送 JSON-RPC 请求并等待响应。
-   *
-   * @param method - 方法名
-   * @param params - 参数对象
-   * @param timeoutMs - 超时毫秒数（默认 60s）
-   * @returns 解析为服务端返回的 result
-   */
   request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000): Promise<T> {
     const id = `p${++this.nextId}`
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         if (this.pending.delete(id)) reject(new Error(`请求超时: ${method}`))
       }, timeoutMs)
-      this.pending.set(id, {
-        resolve: (v) => resolve(v as T),
-        reject,
-        timer
-      })
+      this.pending.set(id, { resolve: (v) => resolve(v as T), reject, timer })
       this.ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }))
     })
   }
 
-  /**
-   * 订阅某类网关事件。
-   *
-   * @param type - 事件类型（如 `message.delta`）
-   * @param handler - 事件处理函数
-   * @returns 取消订阅的函数
-   */
   onEvent(type: string, handler: (payload: unknown) => void): () => void {
     let set = this.eventHandlers.get(type)
     if (!set) {
@@ -117,7 +108,6 @@ class JsonRpcClient {
     return () => set?.delete(handler)
   }
 
-  /** 解析一帧：是响应就配对 Promise，是事件就分发。 */
   private handleFrame(raw: string): void {
     let frame: { jsonrpc?: string; id?: string | number | null; method?: string; params?: { type?: string; payload?: unknown }; result?: unknown; error?: { message?: string } }
     try {
@@ -144,7 +134,6 @@ class JsonRpcClient {
     }
   }
 
-  /** 拒绝所有等待中的请求（连接关闭时调用）。 */
   rejectAll(err: Error): void {
     for (const [, call] of this.pending) {
       clearTimeout(call.timer)
@@ -156,92 +145,16 @@ class JsonRpcClient {
 
 /**
  * 启动 PresenceEngine：建立到 Hermes dashboard 的独立 WS 连接，
- * 周期性用临时会话生成空闲问候语，拿到结果后立即删除会话，不污染上下文。
+ * 提供按需通知文案生成能力。每次生成使用临时会话，用完即删。
  *
- * @param conn - dashboard 连接信息（wsUrl、httpBase、token）
- * @returns PresenceController，暴露 getPrompts() 和 stop()
+ * @param conn - dashboard 连接信息
+ * @returns PresenceController
  */
 export function startPresence(conn: DashboardConnection): PresenceController {
-  const buffer: string[] = []
   let rpc: JsonRpcClient | null = null
-  let generateTimer: NodeJS.Timeout | null = null
   let stopped = false
 
-  /**
-   * 用临时会话生成一批问候语，拿到结果后立即删除会话。
-   *
-   * 流程：session.create → prompt.submit → 等待 message.complete → session.delete → 解析入缓冲。
-   * 每一步失败都尝试清理临时会话，确保不留孤儿。
-   * 失败时静默忽略（不清空已有缓冲），由兜底文案保证前端始终有内容可展示。
-   */
-  async function generateBatch(): Promise<void> {
-    if (!rpc || stopped) return
-
-    let tempSessionId: string | null = null
-
-    /**
-     * 尝试删除临时会话，失败不抛错（dashboard 可能不支持或已清理）。
-     */
-    const tryDelete = async (): Promise<void> => {
-      if (!tempSessionId || !rpc) return
-      try {
-        await rpc.request('session.delete', { session_id: tempSessionId }, 10_000)
-      } catch {
-        // session.delete 可能不被支持，静默忽略
-      }
-    }
-
-    try {
-      // 1. 创建临时会话
-      const createRes = await rpc.request<{ session_id: string }>('session.create', {
-        source: 'hermes-presence-temp'
-      })
-      tempSessionId = createRes.session_id
-
-      // 2. 提交生成请求
-      await rpc.request('prompt.submit', {
-        session_id: tempSessionId,
-        text: GENERATION_PROMPT
-      })
-
-      // 3. 等待 message.complete，累积 delta
-      const completeText = await new Promise<string>((resolve, reject) => {
-        let accumulated = ''
-        const timeout = setTimeout(() => reject(new Error('等待生成响应超时')), 120_000)
-
-        const unsubDelta = rpc!.onEvent('message.delta', (payload) => {
-          const text = (payload as { text?: string } | undefined)?.text
-          if (text) accumulated += text
-        })
-
-        const unsubComplete = rpc!.onEvent('message.complete', (payload) => {
-          clearTimeout(timeout)
-          unsubDelta()
-          unsubComplete()
-          const text = (payload as { text?: string } | undefined)?.text ?? accumulated
-          resolve(text)
-        })
-      })
-
-      // 4. 删除临时会话
-      await tryDelete()
-
-      // 5. 解析并推入缓冲区
-      const parsed = parsePrompts(completeText)
-      for (const prompt of parsed) {
-        if (buffer.length >= MAX_BUFFER_SIZE) buffer.shift()
-        buffer.push(prompt)
-      }
-
-      console.log(`[presence] 生成完成，获得 ${parsed.length} 条，缓冲区共 ${buffer.length} 条`)
-    } catch (err) {
-      console.error('[presence] 生成失败:', err instanceof Error ? err.message : err)
-      // 失败也尝试清理
-      await tryDelete()
-    }
-  }
-
-  // ── 建立 WS 连接 ──
+  // 建立 WS 连接
   const ws = new WebSocket(conn.wsUrl)
 
   ws.on('open', () => {
@@ -249,20 +162,8 @@ export function startPresence(conn: DashboardConnection): PresenceController {
       ws.close()
       return
     }
-
     rpc = new JsonRpcClient(ws)
-
-    // 立即生成第一批
-    generateBatch().catch((err) => {
-      console.error('[presence] 初始生成失败:', err instanceof Error ? err.message : err)
-    })
-
-    // 之后每 5 分钟生成一批
-    generateTimer = setInterval(() => {
-      generateBatch().catch((err) => {
-        console.error('[presence] 定时生成失败:', err instanceof Error ? err.message : err)
-      })
-    }, GENERATE_INTERVAL_MS)
+    console.log('[presence] WS 已连接')
   })
 
   ws.on('error', (err) => {
@@ -278,16 +179,78 @@ export function startPresence(conn: DashboardConnection): PresenceController {
   })
 
   return {
-    getPrompts(): string[] {
-      return buffer.length > 0 ? [...buffer] : FALLBACK_PROMPTS
+    /**
+     * 根据对话上下文生成一句通知文案。
+     */
+    async generateNotify(context: string): Promise<string> {
+      if (!rpc) {
+        // WS 还没连上时直接返回兜底文案
+        return FALLBACK_NOTIFY[Math.floor(Math.random() * FALLBACK_NOTIFY.length)]
+      }
+
+      const promptText = context
+        ? `${NOTIFY_WITH_CONTEXT}\n${context}`
+        : NOTIFY_EMPTY_CONTEXT
+
+      let tempSessionId: string | null = null
+
+      const tryDelete = async (): Promise<void> => {
+        if (!tempSessionId || !rpc) return
+        try {
+          await rpc.request('session.delete', { session_id: tempSessionId }, 10_000)
+        } catch {
+          // session.delete 可能不被支持，静默忽略
+        }
+      }
+
+      try {
+        // 1. 创建临时会话
+        const createRes = await rpc.request<{ session_id: string }>('session.create', {
+          source: 'hermes-presence-temp'
+        })
+        tempSessionId = createRes.session_id
+
+        // 2. 提交生成请求
+        await rpc.request('prompt.submit', {
+          session_id: tempSessionId,
+          text: promptText
+        })
+
+        // 3. 等待 message.complete
+        const completeText = await new Promise<string>((resolve, reject) => {
+          let accumulated = ''
+          const timeout = setTimeout(() => reject(new Error('等待生成响应超时')), GENERATE_TIMEOUT_MS)
+
+          const unsubDelta = rpc!.onEvent('message.delta', (payload) => {
+            const text = (payload as { text?: string } | undefined)?.text
+            if (text) accumulated += text
+          })
+
+          const unsubComplete = rpc!.onEvent('message.complete', (payload) => {
+            clearTimeout(timeout)
+            unsubDelta()
+            unsubComplete()
+            const text = (payload as { text?: string } | undefined)?.text ?? accumulated
+            resolve(text)
+          })
+        })
+
+        // 4. 删除临时会话
+        await tryDelete()
+
+        // 5. 解析并返回
+        const result = parseNotifyText(completeText)
+        console.log(`[presence] 通知文案生成: "${result}"`)
+        return result
+      } catch (err) {
+        console.error('[presence] 通知生成失败:', err instanceof Error ? err.message : err)
+        await tryDelete()
+        return FALLBACK_NOTIFY[Math.floor(Math.random() * FALLBACK_NOTIFY.length)]
+      }
     },
 
     stop(): void {
       stopped = true
-      if (generateTimer) {
-        clearInterval(generateTimer)
-        generateTimer = null
-      }
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
         ws.close()
       }

@@ -4,6 +4,7 @@ import { textPart } from '@hermes/shared'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useGateway } from '@/hooks/use-gateway'
 import { useConversation } from '@/hooks/use-conversation'
+import { useIdleNotify } from '@/hooks/use-idle-notify'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -62,6 +63,9 @@ export function Chat(): React.JSX.Element {
     setMessages,
     sendError: conversationError
   } = conversation
+
+  // 空闲通知调度：用户停止对话后，随机延迟后弹出系统通知
+  useIdleNotify({ messages, isStreaming, ready })
 
   const clearCombinedError = useCallback(() => {
     clearError()

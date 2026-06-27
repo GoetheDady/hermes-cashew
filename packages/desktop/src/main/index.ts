@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Notification } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -52,6 +52,25 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+
+  /**
+   * 显示系统通知。renderer 空闲时调用，让 Hermes 主动"找"用户。
+   * 点击通知时聚焦主窗口。
+   */
+  ipcMain.on('show-notification', (_event, { title, body }: { title: string; body: string }) => {
+    if (!Notification.isSupported()) return
+
+    const notification = new Notification({ title, body })
+    notification.on('click', () => {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win) {
+        if (win.isMinimized()) win.restore()
+        win.show()
+        win.focus()
+      }
+    })
+    notification.show()
+  })
 
   createWindow()
 

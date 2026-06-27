@@ -1,10 +1,10 @@
-import { createServer, type ServerResponse } from 'node:http'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import 'dotenv/config'
 import { type DashboardConnection, startDashboard, stopDashboard } from './dashboard.js'
 import { attachProxy } from './proxy.js'
 import { openStateDb } from './db.js'
 import { handleListSessions } from './routes/sessions.js'
-import { handleGetPrompts } from './routes/presence.js'
+import { handleNotify } from './routes/presence.js'
 import { startPresence, type PresenceController } from './presence.js'
 import { ensureWorkspaceDir } from './workspace.js'
 
@@ -81,9 +81,9 @@ async function main(): Promise<void> {
       return
     }
 
-    // 空闲问候语：PresenceEngine 生成的动态提示词列表。
-    if (req.url === '/api/presence/prompts' && req.method === 'GET') {
-      handleGetPrompts(req.url!, res, presence!)
+    // 通知文案生成：前端传入对话上下文，PresenceEngine 让 Hermes 生成一句追问。
+    if (req.url === '/api/presence/notify' && req.method === 'POST') {
+      handleNotify(req, res, presence!)
       return
     }
 
