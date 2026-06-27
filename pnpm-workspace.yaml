@@ -1,7 +1,15 @@
 packages:
   - 'packages/*'
 
-# 允许这些依赖在安装时运行构建脚本（electron 需要它下载二进制；esbuild 同理）。
+allowBuilds:
+  better-sqlite3: true
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+
+# 允许这些依赖在安装时运行构建脚本（native/electron/esbuild 依赖需要生成或下载二进制）。
 onlyBuiltDependencies:
+  - better-sqlite3
   - electron
+  - electron-winstaller
   - esbuild
