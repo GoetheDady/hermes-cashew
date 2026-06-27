@@ -4,6 +4,7 @@ import { type DashboardConnection, startDashboard, stopDashboard } from './dashb
 import { attachProxy } from './proxy.js'
 import { openStateDb } from './db.js'
 import { handleListSessions } from './routes/sessions.js'
+import { ensureWorkspaceDir } from './workspace.js'
 
 /** 后端自身监听端口，默认 8765。 */
 const PORT = Number(process.env.PORT ?? 8765)
@@ -40,6 +41,9 @@ async function proxySessionMessages(
  * 在 `/api/health` 提供健康检查、在 `/ws` 挂 WebSocket 桥接代理。
  */
 async function main(): Promise<void> {
+  const workspaceDir = await ensureWorkspaceDir()
+  console.log(`[backend] 工作空间就绪：${workspaceDir}`)
+
   db = openStateDb()
   const conn = await startDashboard()
   console.log(`[backend] dashboard 就绪 → ${conn.wsUrl.replace(/token=[^&]+/, 'token=***')}`)
