@@ -126,7 +126,6 @@ class JsonRpcClient {
       return
     }
 
-    // 响应帧：配对 pending 请求
     if (frame.id !== undefined && frame.id !== null) {
       const call = this.pending.get(String(frame.id))
       if (!call) return
@@ -137,7 +136,6 @@ class JsonRpcClient {
       return
     }
 
-    // 事件帧：分发给注册的 handler
     if (frame.method === 'event' && frame.params?.type) {
       const handlers = this.eventHandlers.get(frame.params.type)
       if (handlers) {
@@ -158,7 +156,7 @@ class JsonRpcClient {
 
 /**
  * 启动 PresenceEngine：建立到 Hermes dashboard 的独立 WS 连接，
- * 创建专用会话，周期性生成空闲问候语存入环形缓冲区。
+ * 周期性用临时会话生成空闲问候语，拿到结果后立即删除会话，不污染上下文。
  *
  * @param conn - dashboard 连接信息（wsUrl、httpBase、token）
  * @returns PresenceController，暴露 getPrompts() 和 stop()
@@ -166,27 +164,47 @@ class JsonRpcClient {
 export function startPresence(conn: DashboardConnection): PresenceController {
   const buffer: string[] = []
   let rpc: JsonRpcClient | null = null
-  let sessionId: string | null = null
   let generateTimer: NodeJS.Timeout | null = null
   let stopped = false
 
   /**
-   * 向 Hermes 请求生成一批空闲问候语，解析后推入环形缓冲区。
+   * 用临时会话生成一批问候语，拿到结果后立即删除会话。
    *
-   * 流程：prompt.submit → 等待 message.complete 事件 → 解析文本 → 入缓冲。
+   * 流程：session.create → prompt.submit → 等待 message.complete → session.delete → 解析入缓冲。
+   * 每一步失败都尝试清理临时会话，确保不留孤儿。
    * 失败时静默忽略（不清空已有缓冲），由兜底文案保证前端始终有内容可展示。
    */
   async function generateBatch(): Promise<void> {
-    if (!rpc || !sessionId || stopped) return
+    if (!rpc || stopped) return
+
+    let tempSessionId: string | null = null
+
+    /**
+     * 尝试删除临时会话，失败不抛错（dashboard 可能不支持或已清理）。
+     */
+    const tryDelete = async (): Promise<void> => {
+      if (!tempSessionId || !rpc) return
+      try {
+        await rpc.request('session.delete', { session_id: tempSessionId }, 10_000)
+      } catch {
+        // session.delete 可能不被支持，静默忽略
+      }
+    }
 
     try {
-      // 提交提示词生成请求
+      // 1. 创建临时会话
+      const createRes = await rpc.request<{ session_id: string }>('session.create', {
+        source: 'hermes-presence-temp'
+      })
+      tempSessionId = createRes.session_id
+
+      // 2. 提交生成请求
       await rpc.request('prompt.submit', {
-        session_id: sessionId,
+        session_id: tempSessionId,
         text: GENERATION_PROMPT
       })
 
-      // 等待 message.complete 事件，累积 delta 文本
+      // 3. 等待 message.complete，累积 delta
       const completeText = await new Promise<string>((resolve, reject) => {
         let accumulated = ''
         const timeout = setTimeout(() => reject(new Error('等待生成响应超时')), 120_000)
@@ -205,24 +223,28 @@ export function startPresence(conn: DashboardConnection): PresenceController {
         })
       })
 
-      // 解析并推入缓冲区
+      // 4. 删除临时会话
+      await tryDelete()
+
+      // 5. 解析并推入缓冲区
       const parsed = parsePrompts(completeText)
       for (const prompt of parsed) {
         if (buffer.length >= MAX_BUFFER_SIZE) buffer.shift()
         buffer.push(prompt)
       }
 
-      console.log(`[presence] 生成完成，获得 ${parsed.length} 条问候语，缓冲区共 ${buffer.length} 条`)
+      console.log(`[presence] 生成完成，获得 ${parsed.length} 条，缓冲区共 ${buffer.length} 条`)
     } catch (err) {
       console.error('[presence] 生成失败:', err instanceof Error ? err.message : err)
-      // 不清空已有缓冲，静默重试下一次
+      // 失败也尝试清理
+      await tryDelete()
     }
   }
 
   // ── 建立 WS 连接 ──
   const ws = new WebSocket(conn.wsUrl)
 
-  ws.on('open', async () => {
+  ws.on('open', () => {
     if (stopped) {
       ws.close()
       return
@@ -230,26 +252,17 @@ export function startPresence(conn: DashboardConnection): PresenceController {
 
     rpc = new JsonRpcClient(ws)
 
-    try {
-      // 创建专用会话
-      const result = await rpc.request<{ session_id: string }>('session.create', {
-        source: 'hermes-presence'
+    // 立即生成第一批
+    generateBatch().catch((err) => {
+      console.error('[presence] 初始生成失败:', err instanceof Error ? err.message : err)
+    })
+
+    // 之后每 5 分钟生成一批
+    generateTimer = setInterval(() => {
+      generateBatch().catch((err) => {
+        console.error('[presence] 定时生成失败:', err instanceof Error ? err.message : err)
       })
-      sessionId = result.session_id
-      console.log('[presence] 专用会话已创建:', sessionId)
-
-      // 立即生成第一批
-      await generateBatch()
-
-      // 之后每 5 分钟生成一批
-      generateTimer = setInterval(() => {
-        generateBatch().catch((err) => {
-          console.error('[presence] 定时生成失败:', err instanceof Error ? err.message : err)
-        })
-      }, GENERATE_INTERVAL_MS)
-    } catch (err) {
-      console.error('[presence] 初始化失败:', err instanceof Error ? err.message : err)
-    }
+    }, GENERATE_INTERVAL_MS)
   })
 
   ws.on('error', (err) => {
@@ -265,16 +278,10 @@ export function startPresence(conn: DashboardConnection): PresenceController {
   })
 
   return {
-    /**
-     * 返回当前缓冲区快照。空时返回兜底文案。
-     */
     getPrompts(): string[] {
       return buffer.length > 0 ? [...buffer] : FALLBACK_PROMPTS
     },
 
-    /**
-     * 停止 PresenceEngine：清除定时器，关闭 WS 连接。
-     */
     stop(): void {
       stopped = true
       if (generateTimer) {
