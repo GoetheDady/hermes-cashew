@@ -13,6 +13,7 @@ import { EmptyConversation } from '@/components/empty-conversation'
 import { SessionSidebar } from '@/components/session-sidebar'
 import type { CashewPresenceState } from '@/lib/cashew-presence'
 import { getCashewPresence, hasActiveToolCall } from '@/lib/cashew-presence'
+import { getTopControlsRowClass } from '@/lib/window-chrome'
 import { History, PanelLeftClose, RotateCcw, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
@@ -255,6 +256,7 @@ export function Chat(): React.JSX.Element {
       : '问 Hermes 点什么…'
   const idleBreathingDuration = isMidnight ? 6 : 4
   const latestSession = sessions[0]
+  const topControlsRowClass = getTopControlsRowClass()
   const shouldShowMemoryStart =
     ready &&
     !hasActiveSession &&
@@ -336,12 +338,12 @@ export function Chat(): React.JSX.Element {
         />
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="app-no-drag relative z-50 ml-24 flex h-9 shrink-0 items-center justify-between px-3">
+        <div className={topControlsRowClass}>
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+              className="app-no-drag h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
               onClick={() => toggleMemoryOpen(setIsMemoryOpen)}
               aria-pressed={isMemoryOpen}
             >
@@ -358,7 +360,7 @@ export function Chat(): React.JSX.Element {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-muted-foreground hover:text-foreground"
+              className="app-no-drag h-7 px-2 text-muted-foreground hover:text-foreground"
               onClick={() => navigate('/settings')}
               title="设置"
             >
@@ -556,7 +558,7 @@ function CashewPresenceIndicator({
 
   return (
     <span
-      className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs ${toneClass}`}
+      className={`app-no-drag inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs ${toneClass}`}
       aria-label={`Cashew Presence: ${presence.label}`}
     >
       <motion.span

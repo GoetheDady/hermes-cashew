@@ -158,6 +158,10 @@
   -webkit-app-region: no-drag;
 }
 
+.app-drag {
+  -webkit-app-region: drag;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
