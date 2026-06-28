@@ -90,7 +90,7 @@ export function Settings(): React.JSX.Element {
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col pt-10">
+    <div className="app-no-drag flex min-h-0 min-w-0 flex-1 flex-col pt-10">
       {/* 顶部导航 */}
       <div className="mx-auto w-full max-w-2xl px-6">
         <Button
@@ -132,9 +132,7 @@ export function Settings(): React.JSX.Element {
               disabled={modelItems.length === 0}
             >
               <SelectTrigger className="h-10 w-full">
-                <SelectValue placeholder="选择模型…">
-                  {currentModel || '选择模型…'}
-                </SelectValue>
+                <SelectValue placeholder="选择模型…">{currentModel || '选择模型…'}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {Array.from(grouped.entries()).map(([slug, items]) => (
@@ -184,9 +182,7 @@ export function Settings(): React.JSX.Element {
               className="w-full"
             />
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">
-                {REASONING_LABELS[reasoningEffort]}
-              </span>
+              <span className="text-sm font-medium">{REASONING_LABELS[reasoningEffort]}</span>
               <span className="text-xs text-muted-foreground">
                 {effortDescriptions[reasoningEffort] ?? ''}
               </span>

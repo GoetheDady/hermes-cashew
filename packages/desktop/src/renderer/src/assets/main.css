@@ -154,6 +154,10 @@
     color 700ms ease-in-out;
 }
 
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

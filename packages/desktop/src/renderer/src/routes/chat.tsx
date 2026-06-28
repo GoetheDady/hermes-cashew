@@ -336,7 +336,7 @@ export function Chat(): React.JSX.Element {
         />
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex h-8 shrink-0 items-center justify-between px-3">
+        <div className="app-no-drag relative z-50 ml-24 flex h-9 shrink-0 items-center justify-between px-3">
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -366,7 +366,7 @@ export function Chat(): React.JSX.Element {
             </Button>
           )}
         </div>
-        <div className="relative min-h-0 flex-1 px-3">
+        <div className="app-no-drag relative min-h-0 flex-1 px-3">
           <ScrollArea className="h-full">
             <div className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-4">
               {shouldShowMemoryStart && latestSession ? (
@@ -409,7 +409,7 @@ export function Chat(): React.JSX.Element {
         <AnimatePresence initial={false}>
           {statusText && (
             <motion.div
-              className="mx-auto mb-2 flex w-full max-w-3xl items-center justify-between gap-3 px-4 text-xs"
+              className="app-no-drag mx-auto mb-2 flex w-full max-w-3xl items-center justify-between gap-3 px-4 text-xs"
               initial={reducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
@@ -447,7 +447,7 @@ export function Chat(): React.JSX.Element {
           )}
         </AnimatePresence>
 
-        <footer className="p-3">
+        <footer className="app-no-drag p-3">
           <div className="mx-auto max-w-3xl">
             <motion.div
               className="rounded-xl border bg-card px-3 pb-2.5 pt-2.5 shadow-sm"

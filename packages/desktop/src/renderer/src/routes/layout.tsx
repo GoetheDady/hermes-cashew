@@ -1,30 +1,32 @@
 import { Outlet } from 'react-router-dom'
-import { getTitlebarGutterPx } from '@/lib/titlebar-gutter'
+import { getTrafficLightAvoidanceClass, getWindowDragRegionClass } from '@/lib/window-chrome'
 
 /**
- * 应用根布局：提供透明拖拽条 + 子路由渲染出口。
+ * 应用根布局：提供窗口拖拽背景、macOS 三点避让区和子路由渲染出口。
  *
- * 拖拽条用于 macOS 无原生标题栏时拖动窗口，所有页面共享。
+ * 顶部背景条用于拖动窗口；左上角只保留 traffic-light 避让区，
+ * 不再把整个页面内容整体下压。
  * 各页面通过 `<Outlet />` 渲染，负责各自的内部布局（侧栏、内容区等）。
+ *
+ * @returns 应用根布局元素
  */
 export function Layout(): React.JSX.Element {
-  const titlebarGutterPx = getTitlebarGutterPx()
+  const dragRegionClass = getWindowDragRegionClass()
+  const avoidanceClass = getTrafficLightAvoidanceClass()
 
   return (
-    <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
-      {/* 透明拖拽条：macOS 无原生标题栏时用于拖动窗口 */}
+    <div className="relative flex h-screen w-screen overflow-hidden bg-background text-foreground">
+      {/* 顶部透明拖拽条：只让窗口背景可拖拽，真实控件需要显式 no-drag。 */}
       <div
-        className="shrink-0"
-        style={
-          {
-            height: titlebarGutterPx,
-            WebkitAppRegion: 'drag'
-          } as React.CSSProperties
-        }
+        className={`absolute inset-x-0 top-0 z-40 ${dragRegionClass}`}
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       />
-      <div className="flex min-h-0 flex-1">
-        <Outlet />
-      </div>
+      {/* macOS 三点避让区：只占左上角，不影响其余顶部内容。 */}
+      <div
+        className={`pointer-events-none absolute left-0 top-0 z-50 ${avoidanceClass}`}
+        aria-hidden="true"
+      />
+      <Outlet />
     </div>
   )
 }

@@ -51,7 +51,7 @@ export function SessionSidebar({
   footerSlot
 }: SessionSidebarProps): React.JSX.Element {
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar pt-8 text-sidebar-foreground">
+    <aside className="app-no-drag flex w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar pt-8 text-sidebar-foreground">
       <div className="space-y-3 px-3 py-3">
         <Button
           variant="default"
@@ -78,7 +78,9 @@ export function SessionSidebar({
                   ? 'bg-accent text-accent-foreground'
                   : 'text-muted-foreground hover:text-foreground'
               ].join(' ')}
-              title={excludeCron ? '已隐藏定时任务会话（点击显示）' : '显示全部会话（点击隐藏定时任务）'}
+              title={
+                excludeCron ? '已隐藏定时任务会话（点击显示）' : '显示全部会话（点击隐藏定时任务）'
+              }
               aria-pressed={excludeCron}
             >
               <Clock className="size-3" />

@@ -27,3 +27,11 @@ _Avoid_: dashboard reconnect, process restart, token refresh
 **Session History**:
 A sidebar list of resumable conversation summaries returned by the Hermes gateway. It is not the full message transcript for a session.
 _Avoid_: transcript, message log, chat archive
+
+**Traffic Light Avoidance Zone**:
+The small top-left rectangle reserved for macOS window controls when the native titlebar is hidden. It protects only the traffic-light buttons instead of pushing the whole app content downward.
+_Avoid_: full titlebar gutter, global top padding
+
+**Window Drag Region**:
+The non-interactive window background that can drag the frameless desktop window. It must not cover buttons, inputs, or other controls, and it must not steal clicks from the Traffic Light Avoidance Zone.
+_Avoid_: draggable controls, full-surface drag layer
