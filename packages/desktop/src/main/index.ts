@@ -3,6 +3,14 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
+// 必须在 app.whenReady() 之前调用，否则 macOS dock hover 仍显示 "Electron"。
+app.setName('Hermes-Cashew')
+
+/**
+ * 创建并显示主聊天窗口。
+ *
+ * @returns 无返回值；窗口生命周期由 Electron 事件管理
+ */
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -11,7 +19,7 @@ function createWindow(): void {
     show: false,
     titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -40,8 +48,12 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
-  // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.hermes.cashew')
+
+  // macOS 开发模式下设置 dock 图标（没有 .app bundle，默认显示 Electron 图标）
+  if (is.dev && process.platform === 'darwin') {
+    app.dock?.setIcon(icon)
+  }
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -60,7 +72,7 @@ app.whenReady().then(() => {
   ipcMain.on('show-notification', (_event, { title, body }: { title: string; body: string }) => {
     if (!Notification.isSupported()) return
 
-    const notification = new Notification({ title, body })
+    const notification = new Notification({ title, body, icon })
     notification.on('click', () => {
       const win = BrowserWindow.getAllWindows()[0]
       if (win) {

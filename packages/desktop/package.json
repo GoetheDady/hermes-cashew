@@ -1,5 +1,6 @@
 {
   "name": "@hermes/desktop",
+  "productName": "Hermes-Cashew",
   "version": "0.0.0",
   "description": "Hermes 聊天桌面客户端（Electron + React + Vite）",
   "main": "./out/main/index.js",
