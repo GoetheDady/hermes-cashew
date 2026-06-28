@@ -6,7 +6,7 @@ import { ThinkingBlock } from './thinking-block'
 import { ToolCallBlock } from './tool-call-block'
 
 /** 轻量消息进入动画：只做低幅度透明度/位移，避免打扰阅读。 */
-const messageEnterTransition = { duration: 0.22, ease: 'easeOut' } as const
+const messageEnterTransition = { duration: 0.3, ease: 'easeOut' } as const
 
 /**
  * 单条消息气泡。user 右对齐，assistant 左对齐。
@@ -18,12 +18,24 @@ interface MessageBubbleProps {
   isStreaming: boolean
   /** 思考开始时间戳，用于计算耗时（仅对最后一条 assistant 生效）。 */
   thinkingStartedAt: number | null
+  /** 是否播放新消息入场动画；历史和回放消息应即时显示。 */
+  animateEntry?: boolean
+  /** 新消息逐条出现时的稳定延迟，单位为秒。 */
+  entryDelay?: number
 }
 
+/**
+ * 渲染单条对话消息，并按调用方声明决定是否播放入场动画。
+ *
+ * @param props - 消息内容、流式状态和入场动画控制项
+ * @returns 单条消息气泡元素
+ */
 export function MessageBubble({
   message,
   isStreaming,
-  thinkingStartedAt
+  thinkingStartedAt,
+  animateEntry = true,
+  entryDelay = 0
 }: MessageBubbleProps): React.JSX.Element {
   const isUser = message.role === 'user'
   const reducedMotion = useReducedMotion()
@@ -31,9 +43,9 @@ export function MessageBubble({
   return (
     <motion.div
       className="flex justify-start"
-      initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+      initial={reducedMotion || !animateEntry ? false : { opacity: 0, y: 2 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={messageEnterTransition}
+      transition={{ ...messageEnterTransition, delay: animateEntry ? entryDelay : 0 }}
       layout={!reducedMotion}
     >
       <div

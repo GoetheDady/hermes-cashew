@@ -21,12 +21,56 @@ type BackendHealth = 'idle' | 'checking' | 'available' | 'unavailable'
 /** 页面级微动效参数：短、轻、低位移。 */
 const softTransition = { duration: 0.22, ease: 'easeOut' } as const
 
-const idleInputShadow = '0 6px 18px color-mix(in oklch, var(--foreground) 7%, transparent), 0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent)'
+const idleInputShadow = [
+  '0 6px 18px color-mix(in oklch, var(--foreground) 3%, transparent), 0 1px 2px color-mix(in oklch, var(--foreground) 4%, transparent)',
+  '0 8px 24px color-mix(in oklch, var(--foreground) 8%, transparent), 0 1px 4px color-mix(in oklch, var(--foreground) 6%, transparent)',
+  '0 6px 18px color-mix(in oklch, var(--foreground) 3%, transparent), 0 1px 2px color-mix(in oklch, var(--foreground) 4%, transparent)'
+]
 const focusedInputShadow = [
   '0 0 0 1px color-mix(in oklch, var(--ring) 10%, transparent), 0 12px 30px color-mix(in oklch, var(--foreground) 9%, transparent), 0 0 22px color-mix(in oklch, var(--primary) 9%, transparent)',
   '0 0 0 1px color-mix(in oklch, var(--ring) 14%, transparent), 0 18px 46px color-mix(in oklch, var(--foreground) 13%, transparent), 0 0 36px color-mix(in oklch, var(--primary) 15%, transparent)',
   '0 0 0 1px color-mix(in oklch, var(--ring) 10%, transparent), 0 12px 30px color-mix(in oklch, var(--foreground) 9%, transparent), 0 0 22px color-mix(in oklch, var(--primary) 9%, transparent)'
 ]
+
+const MIN_MESSAGE_ENTRY_DELAY = 0.08
+const MAX_MESSAGE_ENTRY_DELAY = 0.2
+
+/**
+ * 当前本地时间是否处于午夜氛围时段。
+ *
+ * @returns 0-5 点返回 true，其余时间返回 false
+ */
+function isMidnightHour(): boolean {
+  const hour = new Date().getHours()
+  return hour >= 0 && hour <= 5
+}
+
+/**
+ * 为消息 key 生成稳定的错落入场延迟。
+ *
+ * @param key - 消息身份和索引组成的稳定 key
+ * @returns 80ms 到 200ms 之间的秒数，用于 Motion transition
+ */
+function createMessageEntryDelay(key: string): number {
+  let hash = 0
+  for (let index = 0; index < key.length; index += 1) {
+    hash = (hash * 31 + key.charCodeAt(index)) % 1000
+  }
+  return (
+    MIN_MESSAGE_ENTRY_DELAY + (hash / 999) * (MAX_MESSAGE_ENTRY_DELAY - MIN_MESSAGE_ENTRY_DELAY)
+  )
+}
+
+/**
+ * 生成用于动画判断的消息 key。
+ *
+ * @param message - 当前渲染的消息
+ * @param index - 消息在 transcript 中的索引
+ * @returns 稳定标识，同一条 mounted 消息重渲染时保持不变
+ */
+function getMessageAnimationKey(message: ChatMessage, index: number): string {
+  return `${message.id ?? message.role}:${index}`
+}
 
 /**
  * 聊天页面：打开即进入新的 Hermes 对话。
@@ -44,12 +88,15 @@ export function Chat(): React.JSX.Element {
   const [sessionRetryKey, setSessionRetryKey] = useState(0)
   const [backendHealth, setBackendHealth] = useState<BackendHealth>('idle')
   const [isInputFocused, setIsInputFocused] = useState(false)
+  const [isMidnight, setIsMidnight] = useState(() => isMidnightHour())
+  const [initialHistoryCount, setInitialHistoryCount] = useState(0)
   const reducedMotion = useReducedMotion()
 
   /** 共享的运行时 session_id ref：当前页面创建，useConversation 读取。 */
   const sessionIdRef = useRef<string>('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const messagesLengthRef = useRef(0)
 
   // ── 业务 hooks ──
   const { clientRef, conn, ready, error: gatewayError, reconnect, clearError } = useGateway()
@@ -99,11 +146,14 @@ export function Chat(): React.JSX.Element {
       .then((res) => {
         sessionIdRef.current = res.session_id
         const initialMessages = mapHistory(res.messages)
+        setInitialHistoryCount(
+          initialMessages.length > 0 ? initialMessages.length : messagesLengthRef.current
+        )
         // Gateway Reconnect 后会创建新的运行时会话；若 dashboard 没返回可见消息，
         // 不清空用户已经看到的 transcript，避免一次恢复动作看起来像丢上下文。
-        setMessages((prev) =>
-          prev.length === 0 || initialMessages.length > 0 ? initialMessages : prev
-        )
+        setMessages((prev) => {
+          return prev.length === 0 || initialMessages.length > 0 ? initialMessages : prev
+        })
         setHasActiveSession(true)
         window.setTimeout(() => inputRef.current?.focus(), 0)
       })
@@ -115,13 +165,27 @@ export function Chat(): React.JSX.Element {
       .finally(() => setIsSessionStarting(false))
   }, [ready, clientRef, setMessages, sessionRetryKey])
 
+  // ── 午夜氛围：分钟级检查即可，跨 0/6 点时自动切换色温和节奏。 ──
+  useEffect(() => {
+    const updateMidnight = (): void => setIsMidnight(isMidnightHour())
+    updateMidnight()
+    const interval = window.setInterval(updateMidnight, 60_000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  // ── 镜像消息数量，供 session.create 回调区分历史/回放与后续新消息。 ──
+  useEffect(() => {
+    messagesLengthRef.current = messages.length
+  }, [messages.length])
+
   // ── 滚动到底部 ──
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'instant' })
   }, [messages])
 
   const hasConnectionProblem = conn === 'closed' || conn === 'error'
-  const canSend = ready && hasActiveSession && !isSessionStarting && !isStreaming && input.trim() !== ''
+  const canSend =
+    ready && hasActiveSession && !isSessionStarting && !isStreaming && input.trim() !== ''
   const connectionText =
     hasConnectionProblem && backendHealth === 'unavailable'
       ? '本地 Hermes 后端不可用，请确认后端已启动'
@@ -134,6 +198,7 @@ export function Chat(): React.JSX.Element {
     : isSessionStarting
       ? '正在开启新对话…'
       : '问 Hermes 点什么…'
+  const idleBreathingDuration = isMidnight ? 6 : 4
 
   // 只在连接异常时探测后端健康；健康状态是文案分类，不参与 token 或 dashboard 细节。
   useEffect(() => {
@@ -170,7 +235,9 @@ export function Chat(): React.JSX.Element {
   }, [input, canSend, sendMessage, clearCombinedError])
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div
+      className={`time-atmosphere flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground${isMidnight ? ' midnight-atmosphere' : ''}`}
+    >
       <div className="h-8 shrink-0" />
       <div className="relative min-h-0 flex-1 px-3">
         <ScrollArea className="h-full">
@@ -182,12 +249,16 @@ export function Chat(): React.JSX.Element {
                 {messages.map((m, i) => {
                   const isLast = i === messages.length - 1
                   const isLastStreaming = isLast && isStreaming && m.role === 'assistant'
+                  const animateEntry = i >= initialHistoryCount
+                  const animationKey = getMessageAnimationKey(m, i)
                   return (
                     <MessageBubble
                       key={m.id ?? i}
                       message={m}
                       isStreaming={isLastStreaming}
                       thinkingStartedAt={isLastStreaming ? thinkingStartedAt : null}
+                      animateEntry={animateEntry}
+                      entryDelay={animateEntry ? createMessageEntryDelay(animationKey) : 0}
                     />
                   )
                 })}
@@ -253,7 +324,7 @@ export function Chat(): React.JSX.Element {
             transition={
               isInputFocused && !reducedMotion
                 ? { duration: 2.2, repeat: Infinity, ease: 'easeInOut' }
-                : softTransition
+                : { duration: idleBreathingDuration, repeat: Infinity, ease: 'easeInOut' }
             }
           >
             <Textarea
