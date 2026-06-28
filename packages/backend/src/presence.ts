@@ -149,9 +149,16 @@ class JsonRpcClient {
   }
 }
 
+/** dashboard 鉴权 header 名（与 hermes web_server 的 _SESSION_HEADER_NAME 一致）。 */
+const SESSION_HEADER = 'X-Hermes-Session-Token'
+
 /**
  * 启动 PresenceEngine：建立到 Hermes dashboard 的独立 WS 连接，
  * 提供按需通知文案生成能力。每次生成使用临时会话，用完即删。
+ *
+ * 删除采用与官方 Hermes Desktop 相同的两步流程：
+ * 1. `session.close` RPC —— 关闭运行时会话
+ * 2. `DELETE /api/sessions/{stored_session_id}` REST —— 删除持久化会话
  *
  * @param conn - dashboard 连接信息
  * @returns PresenceController
@@ -187,10 +194,12 @@ export function startPresence(conn: DashboardConnection): PresenceController {
   return {
     /**
      * 根据对话上下文生成一句通知文案。
+     *
+     * 用临时会话一次性完成：session.create → prompt.submit →
+     * 等待 message.complete → session.close → REST DELETE → 返回文案。
      */
     async generateNotify(context: string): Promise<string> {
       if (!rpc) {
-        // WS 还没连上时直接返回兜底文案
         return FALLBACK_NOTIFY[Math.floor(Math.random() * FALLBACK_NOTIFY.length)]
       }
 
@@ -198,27 +207,60 @@ export function startPresence(conn: DashboardConnection): PresenceController {
         ? `${NOTIFY_WITH_CONTEXT}\n${context}`
         : NOTIFY_EMPTY_CONTEXT
 
-      let tempSessionId: string | null = null
+      /** 运行时会话 ID（短格式，用于 WS RPC）。 */
+      let runtimeSessionId: string | null = null
+      /** 持久化会话 ID（长格式，用于 REST DELETE）。 */
+      let storedSessionId: string | null = null
 
+      /**
+       * 两步删除临时会话，参照官方 Hermes Desktop 的 removeSession 流程。
+       * 先通过 RPC 关闭运行时会话，再通过 REST DELETE 删除持久化记录。
+       */
       const tryDelete = async (): Promise<void> => {
-        if (!tempSessionId || !rpc) return
-        try {
-          await rpc.request('session.delete', { session_id: tempSessionId }, 10_000)
-        } catch {
-          // session.delete 可能不被支持，静默忽略
+        // 第1步：关闭运行时会话（官方做法，session.close 接受 runtime id）
+        if (runtimeSessionId && rpc) {
+          try {
+            await rpc.request('session.close', { session_id: runtimeSessionId }, 10_000)
+          } catch {
+            // session.close 失败不阻塞后续删除
+          }
+        }
+
+        // 第2步：通过 REST DELETE 删除持久化会话（官方做法，用 stored id）
+        if (storedSessionId) {
+          try {
+            const url = `${conn.httpBase}/api/sessions/${encodeURIComponent(storedSessionId)}`
+            const res = await fetch(url, {
+              method: 'DELETE',
+              headers: { [SESSION_HEADER]: conn.token }
+            })
+            if (!res.ok) {
+              console.error('[presence] REST DELETE 失败: HTTP', res.status, storedSessionId)
+            }
+          } catch (err) {
+            console.error(
+              '[presence] REST DELETE 异常:',
+              storedSessionId,
+              err instanceof Error ? err.message : err
+            )
+          }
         }
       }
 
       try {
-        // 1. 创建临时会话
-        const createRes = await rpc.request<{ session_id: string }>('session.create', {
-          source: 'hermes-cashew-presence'
-        })
-        tempSessionId = createRes.session_id
+        // 1. 创建临时会话，同时记录 runtime id 和 stored id
+        const createRes = await rpc.request<{ session_id: string; stored_session_id?: string }>(
+          'session.create',
+          {
+            source: 'hermes-cashew-presence'
+          }
+        )
+        runtimeSessionId = createRes.session_id
+        storedSessionId = createRes.stored_session_id ?? null
 
         // 2. 提交生成请求
         await rpc.request('prompt.submit', {
-          session_id: tempSessionId,
+          session_id: runtimeSessionId,
           text: promptText
         })
 
@@ -237,7 +279,6 @@ export function startPresence(conn: DashboardConnection): PresenceController {
             unsubDelta()
             unsubComplete()
             const status = (payload as { status?: string } | undefined)?.status
-            // 若 Hermes 返回错误状态（如 402 余额不足），视为失败走兜底
             if (status === 'error' || status === 'interrupted') {
               reject(new Error(`生成失败，status=${status}`))
               return
@@ -247,7 +288,7 @@ export function startPresence(conn: DashboardConnection): PresenceController {
           })
         })
 
-        // 4. 删除临时会话
+        // 4. 删除临时会话（session.close + REST DELETE）
         await tryDelete()
 
         // 5. 解析并返回
