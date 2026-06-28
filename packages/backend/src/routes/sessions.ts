@@ -11,16 +11,19 @@ type Database = InstanceType<typeof DatabaseConstructor>
  * @param db - 只读打开的 Hermes state.db
  * @param offset - 偏移量（默认 0）
  * @param limit - 每页条数（默认 50，上限 200）
+ * @param excludeSource - 可选，排除指定 source 的会话（如 "cron"）
  * @returns 分页结果
  */
 function querySessions(
   db: Database,
   offset: number,
-  limit: number
+  limit: number,
+  excludeSource?: string
 ): PaginatedSessionListResult {
+  const whereClause = excludeSource ? 'WHERE source != ?' : ''
   const countRow = db
-    .prepare('SELECT COUNT(*) AS total FROM sessions')
-    .get() as { total: number }
+    .prepare(`SELECT COUNT(*) AS total FROM sessions ${whereClause}`)
+    .get(...(excludeSource ? [excludeSource] : [])) as { total: number }
   const total = countRow.total
 
   const rows = db
@@ -35,10 +38,11 @@ function querySessions(
          WHERE m.session_id = s.id AND m.role = 'user'
          ORDER BY m.timestamp ASC LIMIT 1) AS preview
       FROM sessions s
+      ${whereClause}
       ORDER BY s.started_at DESC
       LIMIT ? OFFSET ?`
     )
-    .all(limit, offset) as Array<{
+    .all(...(excludeSource ? [excludeSource, limit, offset] : [limit, offset])) as Array<{
     id: string
     title: string | null
     started_at: number
@@ -90,9 +94,10 @@ export function handleListSessions(
     200,
     Math.max(1, parseInt(url.searchParams.get('limit') ?? '50', 10) || 50)
   )
+  const excludeSource = url.searchParams.get('exclude_source') || undefined
 
   try {
-    const result = querySessions(db, offset, limit)
+    const result = querySessions(db, offset, limit, excludeSource)
     json(res, 200, result)
   } catch (err) {
     console.error('[sessions] 查询失败:', err instanceof Error ? err.message : err)

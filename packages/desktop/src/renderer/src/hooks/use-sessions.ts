@@ -26,6 +26,8 @@ export interface UseSessionsResult {
   hasMoreSessions: boolean
   /** 是否正在加载更多会话。 */
   isLoadingMore: boolean
+  /** 是否已经尝试加载过第一页会话。 */
+  hasLoadedSessions: boolean
   /** 当前选中的存储会话 ID。 */
   activeStoredId: string
   /** 是否正在打开历史会话。 */
@@ -60,6 +62,7 @@ export function useSessions(
   const [sessionsTotal, setSessionsTotal] = useState(0)
   const [hasMoreSessions, setHasMoreSessions] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasLoadedSessions, setHasLoadedSessions] = useState(false)
   const [activeStoredId, setActiveStoredId] = useState<string>('')
   const [isSessionLoading, setIsSessionLoading] = useState(false)
   const [excludeCron, setExcludeCron] = useState(true)
@@ -100,7 +103,10 @@ export function useSessions(
       .catch(() => {
         /* 列表拉取失败不阻塞对话，静默即可 */
       })
-      .finally(() => setIsLoadingMore(false))
+      .finally(() => {
+        setHasLoadedSessions(true)
+        setIsLoadingMore(false)
+      })
   }, [])
 
   const refreshSessions = useCallback(() => fetchSessions(true), [fetchSessions])
@@ -134,11 +140,7 @@ export function useSessions(
   const selectSession = useCallback(
     (storedId: string): Promise<ChatMessage[] | undefined> => {
       const client = clientRef.current
-      if (
-        !client ||
-        isSessionLoadingRef.current ||
-        storedId === activeStoredId
-      ) {
+      if (!client || isSessionLoadingRef.current || storedId === activeStoredId) {
         return Promise.resolve(undefined)
       }
 
@@ -188,6 +190,7 @@ export function useSessions(
     sessionsTotal,
     hasMoreSessions,
     isLoadingMore,
+    hasLoadedSessions,
     activeStoredId,
     isSessionLoading,
     excludeCron,

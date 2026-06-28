@@ -5,7 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { StatusBadge } from '@/components/status-badge'
-import { LoaderCircle, MessageSquare, Plus } from 'lucide-react'
+import { Clock, LoaderCircle, MessageSquare, Plus } from 'lucide-react'
 
 export interface SessionSidebarProps {
   sessions: SessionSummary[]
@@ -17,10 +17,14 @@ export interface SessionSidebarProps {
   isStreaming: boolean
   isSessionLoading: boolean
   conn: ConnectionState
+  /** 是否排除定时任务（cron）会话。 */
+  excludeCron: boolean
   onNewSession: () => void
   onSelectSession: (storedId: string) => void
   onLoadMore: () => void
   onReconnect: () => void
+  /** 切换是否排除定时任务会话。 */
+  onToggleExcludeCron: () => void
   /** 底部区域额外内容（如设置按钮）。 */
   footerSlot?: React.ReactNode
 }
@@ -38,10 +42,12 @@ export function SessionSidebar({
   isStreaming,
   isSessionLoading,
   conn,
+  excludeCron,
   onNewSession,
   onSelectSession,
   onLoadMore,
   onReconnect,
+  onToggleExcludeCron,
   footerSlot
 }: SessionSidebarProps): React.JSX.Element {
   return (
@@ -62,11 +68,27 @@ export function SessionSidebar({
             <MessageSquare className="size-3.5" />
             <span>会话历史</span>
           </div>
-          {sessionsTotal > 0 && (
-            <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[0.7rem]">
-              {sessionsTotal}
-            </Badge>
-          )}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onToggleExcludeCron}
+              className={[
+                'inline-flex size-5 items-center justify-center rounded transition-colors',
+                excludeCron
+                  ? 'bg-accent text-accent-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              ].join(' ')}
+              title={excludeCron ? '已隐藏定时任务会话（点击显示）' : '显示全部会话（点击隐藏定时任务）'}
+              aria-pressed={excludeCron}
+            >
+              <Clock className="size-3" />
+            </button>
+            {sessionsTotal > 0 && (
+              <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[0.7rem]">
+                {sessionsTotal}
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
       <Separator className="bg-sidebar-border" />
