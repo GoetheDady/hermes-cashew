@@ -2,6 +2,7 @@ import type { ChatMessage } from '@hermes/shared'
 import { Streamdown } from 'streamdown'
 import { motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
+import { getMessageBubbleRowClass } from '@/lib/message-layout'
 import { ThinkingBlock } from './thinking-block'
 import { ToolCallBlock } from './tool-call-block'
 
@@ -42,7 +43,7 @@ export function MessageBubble({
 
   return (
     <motion.div
-      className="flex justify-start"
+      className={getMessageBubbleRowClass(message.role)}
       initial={reducedMotion || !animateEntry ? false : { opacity: 0, y: 2 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...messageEnterTransition, delay: animateEntry ? entryDelay : 0 }}

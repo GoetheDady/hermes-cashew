@@ -13,6 +13,13 @@ import { EmptyConversation } from '@/components/empty-conversation'
 import { SessionSidebar } from '@/components/session-sidebar'
 import type { CashewPresenceState } from '@/lib/cashew-presence'
 import { getCashewPresence, hasActiveToolCall } from '@/lib/cashew-presence'
+import {
+  canUseSessionHistoryHoverTrigger,
+  getSessionHistoryClickSurface,
+  SESSION_HISTORY_DRAWER_CLOSE_DELAY_MS,
+  SESSION_HISTORY_DRAWER_OPEN_DELAY_MS,
+  SESSION_HISTORY_HOVER_TRIGGER_CLASS
+} from '@/lib/session-history-layout'
 import { getTopControlsRowClass } from '@/lib/window-chrome'
 import { History, PanelLeftClose, RotateCcw, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -22,6 +29,12 @@ const BACKEND_HTTP = 'http://localhost:8765'
 
 /** 本地后端健康检查状态。 */
 type BackendHealth = 'idle' | 'checking' | 'available' | 'unavailable'
+
+/** 临时 Session History Drawer 的打开来源。 */
+type SessionHistoryDrawerMode = 'click' | 'hover'
+
+/** 用户从哪种 Session History 表面选择会话。 */
+type SessionHistorySelectionSource = 'sidebar' | 'drawer' | 'memory-start'
 
 /** 页面级微动效参数：短、轻、低位移。 */
 const softTransition = { duration: 0.22, ease: 'easeOut' } as const
@@ -98,6 +111,9 @@ export function Chat(): React.JSX.Element {
   const [isMidnight, setIsMidnight] = useState(() => isMidnightHour())
   const [initialHistoryCount, setInitialHistoryCount] = useState(0)
   const [isMemoryOpen, setIsMemoryOpen] = useState(() => readMemoryOpenPreference())
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth)
+  const [drawerMode, setDrawerMode] = useState<SessionHistoryDrawerMode | null>(null)
+  const [hasSidebarBeenManuallyClosed, setHasSidebarBeenManuallyClosed] = useState(false)
   const reducedMotion = useReducedMotion()
 
   /** 共享的运行时 session_id ref：当前页面创建，useConversation 读取。 */
@@ -105,6 +121,8 @@ export function Chat(): React.JSX.Element {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesLengthRef = useRef(0)
+  const drawerOpenTimerRef = useRef<number | null>(null)
+  const drawerCloseTimerRef = useRef<number | null>(null)
 
   // ── 业务 hooks ──
   const { clientRef, conn, ready, error: gatewayError, reconnect, clearError } = useGateway()
@@ -135,6 +153,19 @@ export function Chat(): React.JSX.Element {
     sendError: conversationError,
     clearSendError
   } = conversation
+
+  const clickSurface = getSessionHistoryClickSurface(viewportWidth)
+  const isSessionHistorySidebarOpen = isMemoryOpen && clickSurface === 'sidebar'
+  const isPersistentMemoryDrawerOpen = isMemoryOpen && clickSurface === 'drawer'
+  const isSessionHistoryDrawerOpen = drawerMode !== null || isPersistentMemoryDrawerOpen
+  const isSessionHistoryVisible = isSessionHistorySidebarOpen || isSessionHistoryDrawerOpen
+  const canShowHoverTrigger =
+    !isSessionHistoryDrawerOpen &&
+    canUseSessionHistoryHoverTrigger({
+      viewportWidth,
+      hasSidebarBeenManuallyClosed,
+      isSidebarOpen: isSessionHistorySidebarOpen
+    })
 
   // 空闲通知调度：用户停止对话后，随机延迟后弹出系统通知
   useIdleNotify({ messages, isStreaming, ready })
@@ -168,6 +199,7 @@ export function Chat(): React.JSX.Element {
         setMessages(initialMessages)
         setHasActiveSession(true)
         setMemoryOpenPreference(setIsMemoryOpen, false)
+        setDrawerMode(null)
         window.setTimeout(() => inputRef.current?.focus(), 0)
       })
       .catch((e: Error) => {
@@ -178,7 +210,7 @@ export function Chat(): React.JSX.Element {
   }, [ready, isSessionStarting, clearCombinedError, newSession, setMessages])
 
   const continueSession = useCallback(
-    (storedId: string): void => {
+    (storedId: string, source: SessionHistorySelectionSource = 'memory-start'): void => {
       if (!ready || isSessionStarting) return
       setSessionError(null)
       clearCombinedError()
@@ -188,7 +220,12 @@ export function Chat(): React.JSX.Element {
           setInitialHistoryCount(historyMessages.length)
           setMessages(historyMessages)
           setHasActiveSession(true)
-          setMemoryOpenPreference(setIsMemoryOpen, false)
+          if (source === 'sidebar') {
+            setDrawerMode(null)
+          } else {
+            setMemoryOpenPreference(setIsMemoryOpen, false)
+            setDrawerMode(null)
+          }
           window.setTimeout(() => inputRef.current?.focus(), 0)
         })
         .catch((e: Error) => {
@@ -229,6 +266,21 @@ export function Chat(): React.JSX.Element {
     return () => window.clearInterval(interval)
   }, [])
 
+  // ── 响应式布局：根据窗口宽度在 Sidebar 和 Drawer 之间切换。 ──
+  useEffect(() => {
+    const updateViewportWidth = (): void => setViewportWidth(window.innerWidth)
+    updateViewportWidth()
+    window.addEventListener('resize', updateViewportWidth)
+    return () => window.removeEventListener('resize', updateViewportWidth)
+  }, [])
+
+  // ── Drawer 定时器清理：避免页面卸载后 hover 延迟回调继续 setState。 ──
+  useEffect(() => {
+    return () => {
+      clearSessionHistoryDrawerTimers(drawerOpenTimerRef, drawerCloseTimerRef)
+    }
+  }, [])
+
   // ── 镜像消息数量，供 session.create 回调区分历史/回放与后续新消息。 ──
   useEffect(() => {
     messagesLengthRef.current = messages.length
@@ -264,6 +316,45 @@ export function Chat(): React.JSX.Element {
     !isSessionLoading &&
     hasLoadedSessions &&
     sessions.length > 0
+
+  const handleMemoryToggle = useCallback((): void => {
+    if (clickSurface === 'drawer') {
+      const shouldOpenDrawer = !isSessionHistoryDrawerOpen
+      setDrawerMode(shouldOpenDrawer ? 'click' : null)
+      if (isMemoryOpen) setMemoryOpenPreference(setIsMemoryOpen, false)
+      return
+    }
+
+    setDrawerMode(null)
+    setMemoryOpenPreference(setIsMemoryOpen, !isMemoryOpen)
+    setHasSidebarBeenManuallyClosed(isMemoryOpen)
+  }, [clickSurface, isMemoryOpen, isSessionHistoryDrawerOpen])
+
+  const scheduleHoverDrawerOpen = useCallback((): void => {
+    if (!canShowHoverTrigger) return
+    clearSessionHistoryDrawerTimers(drawerOpenTimerRef, drawerCloseTimerRef)
+    drawerOpenTimerRef.current = window.setTimeout(() => {
+      setDrawerMode('hover')
+    }, SESSION_HISTORY_DRAWER_OPEN_DELAY_MS)
+  }, [canShowHoverTrigger])
+
+  const keepHoverDrawerOpen = useCallback((): void => {
+    if (drawerCloseTimerRef.current !== null) {
+      window.clearTimeout(drawerCloseTimerRef.current)
+      drawerCloseTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleHoverDrawerClose = useCallback((): void => {
+    if (drawerMode !== 'hover') return
+    if (drawerOpenTimerRef.current !== null) {
+      window.clearTimeout(drawerOpenTimerRef.current)
+      drawerOpenTimerRef.current = null
+    }
+    drawerCloseTimerRef.current = window.setTimeout(() => {
+      setDrawerMode(null)
+    }, SESSION_HISTORY_DRAWER_CLOSE_DELAY_MS)
+  }, [drawerMode])
 
   // 只在连接异常时探测后端健康；健康状态是文案分类，不参与 token 或 dashboard 细节。
   useEffect(() => {
@@ -305,69 +396,131 @@ export function Chat(): React.JSX.Element {
 
   return (
     <div
-      className={`time-atmosphere flex min-h-0 min-w-0 flex-1 bg-background text-foreground${isMidnight ? ' midnight-atmosphere' : ''}`}
+      className={`time-atmosphere relative flex min-h-0 min-w-0 flex-1 bg-background text-foreground${isMidnight ? ' midnight-atmosphere' : ''}`}
     >
-      {isMemoryOpen && (
-        <SessionSidebar
-          sessions={sessions}
-          sessionsTotal={sessionsTotal}
-          hasMoreSessions={hasMoreSessions}
-          isLoadingMore={isLoadingMore}
-          activeStoredId={activeStoredId}
-          ready={ready}
-          isStreaming={isStreaming}
-          isSessionLoading={isSessionLoading || isSessionStarting}
-          conn={conn}
-          excludeCron={excludeCron}
-          onNewSession={startNewSession}
-          onSelectSession={continueSession}
-          onLoadMore={loadMoreSessions}
-          onReconnect={reconnect}
-          onToggleExcludeCron={toggleExcludeCron}
-          footerSlot={
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-full justify-start gap-2 text-xs"
-              onClick={() => navigate('/settings')}
-            >
-              <Settings className="size-3.5" />
-              设置
-            </Button>
-          }
+      <div className={topControlsRowClass}>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="app-no-drag h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={handleMemoryToggle}
+            aria-pressed={isSessionHistoryVisible}
+          >
+            {isSessionHistoryVisible ? (
+              <PanelLeftClose className="size-3.5" />
+            ) : (
+              <History className="size-3.5" />
+            )}
+            记忆
+          </Button>
+          <CashewPresenceIndicator presence={presence} reducedMotion={reducedMotion} />
+        </div>
+        {!isSessionHistoryVisible && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="app-no-drag h-7 px-2 text-muted-foreground hover:text-foreground"
+            onClick={() => navigate('/settings')}
+            title="设置"
+          >
+            <Settings className="size-3.5" />
+          </Button>
+        )}
+      </div>
+      {canShowHoverTrigger && (
+        <div
+          className={`app-no-drag absolute inset-y-0 left-0 z-30 ${SESSION_HISTORY_HOVER_TRIGGER_CLASS}`}
+          onMouseEnter={scheduleHoverDrawerOpen}
+          aria-hidden="true"
         />
       )}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className={topControlsRowClass}>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="app-no-drag h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => toggleMemoryOpen(setIsMemoryOpen)}
-              aria-pressed={isMemoryOpen}
-            >
-              {isMemoryOpen ? (
-                <PanelLeftClose className="size-3.5" />
-              ) : (
-                <History className="size-3.5" />
-              )}
-              记忆
-            </Button>
-            <CashewPresenceIndicator presence={presence} reducedMotion={reducedMotion} />
-          </div>
-          {!isMemoryOpen && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="app-no-drag h-7 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => navigate('/settings')}
-              title="设置"
-            >
-              <Settings className="size-3.5" />
-            </Button>
-          )}
-        </div>
+      <AnimatePresence initial={false}>
+        {isSessionHistorySidebarOpen && (
+          <motion.div
+            key="session-history-sidebar"
+            className="h-full min-h-0 shrink-0 overflow-hidden"
+            initial={reducedMotion ? { width: '18rem', opacity: 1 } : { width: 0, opacity: 0.4 }}
+            animate={{ width: '18rem', opacity: 1 }}
+            exit={reducedMotion ? { width: 0, opacity: 0 } : { width: 0, opacity: 0.4 }}
+            transition={reducedMotion ? { duration: 0 } : softTransition}
+          >
+            {/* 只动画外层宽度，让侧栏内部维持固定排版，避免文字在收起过程中重排。 */}
+            <SessionSidebar
+              sessions={sessions}
+              sessionsTotal={sessionsTotal}
+              hasMoreSessions={hasMoreSessions}
+              isLoadingMore={isLoadingMore}
+              activeStoredId={activeStoredId}
+              ready={ready}
+              isStreaming={isStreaming}
+              isSessionLoading={isSessionLoading || isSessionStarting}
+              conn={conn}
+              excludeCron={excludeCron}
+              onNewSession={startNewSession}
+              onSelectSession={(storedId) => continueSession(storedId, 'sidebar')}
+              onLoadMore={loadMoreSessions}
+              onReconnect={reconnect}
+              onToggleExcludeCron={toggleExcludeCron}
+              footerSlot={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-full justify-start gap-2 text-xs"
+                  onClick={() => navigate('/settings')}
+                >
+                  <Settings className="size-3.5" />
+                  设置
+                </Button>
+              }
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence initial={false}>
+        {isSessionHistoryDrawerOpen && (
+          <motion.div
+            key="session-history-drawer"
+            className="absolute inset-y-0 left-0 z-40 h-full w-72 overflow-hidden shadow-[12px_0_32px_color-mix(in_oklch,var(--foreground)_10%,transparent)]"
+            initial={reducedMotion ? { x: 0, opacity: 1 } : { x: -288, opacity: 0.5 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={reducedMotion ? { x: -288, opacity: 0 } : { x: -288, opacity: 0.5 }}
+            transition={reducedMotion ? { duration: 0 } : softTransition}
+            onMouseEnter={keepHoverDrawerOpen}
+            onMouseLeave={scheduleHoverDrawerClose}
+          >
+            <SessionSidebar
+              sessions={sessions}
+              sessionsTotal={sessionsTotal}
+              hasMoreSessions={hasMoreSessions}
+              isLoadingMore={isLoadingMore}
+              activeStoredId={activeStoredId}
+              ready={ready}
+              isStreaming={isStreaming}
+              isSessionLoading={isSessionLoading || isSessionStarting}
+              conn={conn}
+              excludeCron={excludeCron}
+              onNewSession={startNewSession}
+              onSelectSession={(storedId) => continueSession(storedId, 'drawer')}
+              onLoadMore={loadMoreSessions}
+              onReconnect={reconnect}
+              onToggleExcludeCron={toggleExcludeCron}
+              footerSlot={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-full justify-start gap-2 text-xs"
+                  onClick={() => navigate('/settings')}
+                >
+                  <Settings className="size-3.5" />
+                  设置
+                </Button>
+              }
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col pt-9">
         <div className="app-no-drag relative min-h-0 flex-1 px-3">
           <ScrollArea className="h-full">
             <div className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-4">
@@ -378,7 +531,7 @@ export function Chat(): React.JSX.Element {
                   }
                   preview={latestSession.preview?.trim() || '继续上一次和 Hermes 的对话'}
                   disabled={!ready || isSessionLoading || isSessionStarting}
-                  onContinue={() => continueSession(latestSession.id)}
+                  onContinue={() => continueSession(latestSession.id, 'memory-start')}
                   onNew={startNewSession}
                 />
               ) : messages.length === 0 ? (
@@ -586,20 +739,6 @@ function readMemoryOpenPreference(): boolean {
 }
 
 /**
- * 切换 Session History 显隐，并同步到本地 UI 偏好。
- *
- * @param setOpen - React state setter
- * @returns 无返回值
- */
-function toggleMemoryOpen(setOpen: React.Dispatch<React.SetStateAction<boolean>>): void {
-  setOpen((prev) => {
-    const next = !prev
-    window.localStorage.setItem(MEMORY_OPEN_KEY, String(next))
-    return next
-  })
-}
-
-/**
  * 显式设置 Session History 显隐，并同步本地 UI 偏好。
  *
  * @param setOpen - React state setter
@@ -612,6 +751,27 @@ function setMemoryOpenPreference(
 ): void {
   window.localStorage.setItem(MEMORY_OPEN_KEY, String(next))
   setOpen(next)
+}
+
+/**
+ * 清理 Session History Drawer 的 hover 打开/关闭延迟定时器。
+ *
+ * @param openTimerRef - hover 打开延迟定时器 ref
+ * @param closeTimerRef - hover 关闭延迟定时器 ref
+ * @returns 无返回值
+ */
+function clearSessionHistoryDrawerTimers(
+  openTimerRef: React.MutableRefObject<number | null>,
+  closeTimerRef: React.MutableRefObject<number | null>
+): void {
+  if (openTimerRef.current !== null) {
+    window.clearTimeout(openTimerRef.current)
+    openTimerRef.current = null
+  }
+  if (closeTimerRef.current !== null) {
+    window.clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+  }
 }
 
 /**

@@ -28,6 +28,14 @@ _Avoid_: dashboard reconnect, process restart, token refresh
 A sidebar list of resumable conversation summaries returned by the Hermes gateway. It is not the full message transcript for a session.
 _Avoid_: transcript, message log, chat archive
 
+**Session History Sidebar**:
+The persistent side-by-side form of Session History. It is opened by an explicit user click and may reduce the chat canvas width while it remains open.
+_Avoid_: temporary drawer, hover preview, overlay history
+
+**Session History Drawer**:
+The temporary overlay form of Session History. It does not change the chat canvas width; it appears for narrow-window access or when a large-window user has manually closed the sidebar and hovers the left edge, then closes after leaving or completing a history selection.
+_Avoid_: persistent sidebar, layout column, full navigation page
+
 **Traffic Light Avoidance Zone**:
 The small top-left rectangle reserved for macOS window controls when the native titlebar is hidden. It protects only the traffic-light buttons instead of pushing the whole app content downward.
 _Avoid_: full titlebar gutter, global top padding

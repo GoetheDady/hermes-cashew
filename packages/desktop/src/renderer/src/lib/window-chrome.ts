@@ -4,9 +4,9 @@ export const TRAFFIC_LIGHT_AVOIDANCE_CLASS = 'w-24 h-9'
 /** Window Drag Region 使用 Tailwind 的 `h-9` 高度，只覆盖顶部背景条。 */
 export const WINDOW_DRAG_REGION_CLASS = 'h-9'
 
-/** 顶部控件行当前从 Traffic Light 避让区右侧开始排布。 */
+/** 顶部控件行固定在窗口顶部，并从 Traffic Light 避让区右侧开始排布。 */
 export const TOP_CONTROLS_ROW_CLASS =
-  'app-drag relative z-50 ml-24 flex h-9 shrink-0 items-center justify-between px-3'
+  'app-drag absolute left-24 right-0 top-0 z-50 flex h-9 items-center justify-between px-3'
 
 /**
  * 返回 Traffic Light 避让区的 Tailwind 尺寸类。

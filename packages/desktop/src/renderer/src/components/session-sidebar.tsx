@@ -5,6 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { StatusBadge } from '@/components/status-badge'
+import { SESSION_SIDEBAR_CLASS } from '@/lib/session-sidebar-layout'
 import { Clock, LoaderCircle, MessageSquare, Plus } from 'lucide-react'
 
 export interface SessionSidebarProps {
@@ -51,7 +52,7 @@ export function SessionSidebar({
   footerSlot
 }: SessionSidebarProps): React.JSX.Element {
   return (
-    <aside className="app-no-drag flex w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar pt-8 text-sidebar-foreground">
+    <aside className={SESSION_SIDEBAR_CLASS}>
       <div className="space-y-3 px-3 py-3">
         <Button
           variant="default"

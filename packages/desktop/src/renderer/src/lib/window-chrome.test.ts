@@ -15,8 +15,11 @@ describe('window chrome layout tokens', () => {
     assert.equal(getWindowDragRegionClass(), 'h-9')
   })
 
-  it('keeps the top controls row draggable without marking the whole row as no-drag', () => {
+  it('anchors the top controls row to the window instead of page flow', () => {
     assert.match(getTopControlsRowClass(), /\bapp-drag\b/)
+    assert.match(getTopControlsRowClass(), /\babsolute\b/)
+    assert.match(getTopControlsRowClass(), /\bleft-24\b/)
+    assert.doesNotMatch(getTopControlsRowClass(), /\bml-24\b/)
     assert.doesNotMatch(getTopControlsRowClass(), /\bapp-no-drag\b/)
   })
 })
