@@ -2,7 +2,6 @@ import type { ChatMessage } from '@hermes/shared'
 import { Streamdown } from 'streamdown'
 import { motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
-import { getMessageBubbleRowClass } from '@/lib/message-layout'
 import { ThinkingBlock } from './thinking-block'
 import { ToolCallBlock } from './tool-call-block'
 
@@ -10,7 +9,7 @@ import { ToolCallBlock } from './tool-call-block'
 const messageEnterTransition = { duration: 0.3, ease: 'easeOut' } as const
 
 /**
- * 单条消息气泡。user 右对齐，assistant 左对齐。
+ * 单条消息气泡。所有消息一律左对齐，角色之间靠气泡配色区分。
  * assistant 消息按 parts 原顺序展示 reasoning、tool-call 与正文。
  */
 interface MessageBubbleProps {
@@ -43,7 +42,7 @@ export function MessageBubble({
 
   return (
     <motion.div
-      className={getMessageBubbleRowClass(message.role)}
+      className="flex justify-start"
       initial={reducedMotion || !animateEntry ? false : { opacity: 0, y: 2 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...messageEnterTransition, delay: animateEntry ? entryDelay : 0 }}
