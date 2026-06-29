@@ -60,7 +60,7 @@ export function SessionSidebar({
         <Button
           variant="default"
           size="sm"
-          className="w-full justify-start shadow-sm"
+          className="w-full justify-start"
           onClick={onNewSession}
           disabled={!ready || isStreaming || isSessionLoading}
         >
@@ -90,14 +90,14 @@ export function SessionSidebar({
               <Clock className="size-3" />
             </button>
             {sessionsTotal > 0 && (
-              <span className="text-[0.7rem] tabular-nums text-muted-foreground/70">
+              <span className="text-xs tabular-nums text-muted-foreground/70">
                 {sessionsTotal}
               </span>
             )}
           </div>
         </div>
       </div>
-      <Separator className="bg-sidebar-border" />
+      <Separator className="bg-sidebar-border/50" />
       <ScrollArea className="min-h-0 flex-1">
         <nav className="space-y-1.5 px-2 py-3" aria-label="会话历史">
           {sessions.length === 0 && <EmptySessionHistory />}
@@ -130,7 +130,7 @@ export function SessionSidebar({
           )}
         </nav>
       </ScrollArea>
-      <Separator className="bg-sidebar-border" />
+      <Separator className="bg-sidebar-border/50" />
       <div className="px-3 py-2 space-y-2">
         <StatusBadge conn={conn} ready={ready} onReconnect={onReconnect} />
         {footerSlot}
@@ -170,14 +170,20 @@ function SessionHistoryItem({
       title={title}
       aria-current={isActive ? 'page' : undefined}
     >
+      {isActive && (
+        <span
+          aria-hidden="true"
+          className="absolute bottom-2 left-1 top-2 w-0.5 rounded-full bg-sidebar-primary"
+        />
+      )}
       <span className="flex min-w-0 w-full flex-1 flex-col gap-1 overflow-hidden">
         <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-          <span className="min-w-0 truncate text-[0.82rem] font-medium leading-5">{title}</span>
-          <span className="shrink-0 text-[0.68rem] tabular-nums text-muted-foreground/75">
+          <span className="min-w-0 truncate text-sm leading-5">{title}</span>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
             {activityTime}
           </span>
         </span>
-        <span className="line-clamp-2 min-w-0 overflow-hidden break-all text-[0.72rem] leading-4 text-muted-foreground/78">
+        <span className="line-clamp-2 min-w-0 overflow-hidden break-all text-xs leading-4 text-muted-foreground">
           {preview}
         </span>
       </span>
@@ -194,7 +200,7 @@ function EmptySessionHistory(): React.JSX.Element {
   return (
     <div className="mx-1 rounded-md border border-dashed border-sidebar-border bg-background/35 px-3 py-5 text-center">
       <p className="text-xs font-medium text-foreground">暂无历史会话</p>
-      <p className="mt-1 text-[0.72rem] leading-4 text-muted-foreground">新建会话后会显示在这里</p>
+      <p className="mt-1 text-xs leading-4 text-muted-foreground">新建会话后会显示在这里</p>
     </div>
   )
 }
