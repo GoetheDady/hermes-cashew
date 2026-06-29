@@ -4,14 +4,15 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useGateway } from '@/hooks/use-gateway'
 import { useConversation } from '@/hooks/use-conversation'
 import { useIdleNotify } from '@/hooks/use-idle-notify'
+import { useMidnightHour } from '@/hooks/use-midnight-hour'
 import { useSessions } from '@/hooks/use-sessions'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { MessageBubble } from '@/components/message-bubble'
+import { CashewPresenceIndicator } from '@/components/cashew-presence-indicator'
 import { EmptyConversation } from '@/components/empty-conversation'
 import { SessionSidebar } from '@/components/session-sidebar'
-import type { CashewPresenceState } from '@/lib/cashew-presence'
 import { getCashewPresence, hasActiveToolCall } from '@/lib/cashew-presence'
 import {
   canUseSessionHistoryHoverTrigger,
@@ -21,8 +22,8 @@ import {
   SESSION_HISTORY_HOVER_TRIGGER_CLASS
 } from '@/lib/session-history-layout'
 import { shouldShowContinueLast as shouldShowContinueLastFn } from '@/lib/fresh-conversation'
-import { getTopControlsRowClass } from '@/lib/window-chrome'
-import { History, PanelLeftClose, RotateCcw, Settings } from 'lucide-react'
+import { getTopControlsRowClass, getTrafficLightInsetPx } from '@/lib/window-chrome'
+import { PanelLeftClose, PanelLeftOpen, RotateCcw, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 /** 后端 HTTP 基址，用于连接异常时做最薄的可达性分类。 */
@@ -35,7 +36,7 @@ type BackendHealth = 'idle' | 'checking' | 'available' | 'unavailable'
 type SessionHistoryDrawerMode = 'click' | 'hover'
 
 /** 用户从哪种 Session History 表面选择会话。 */
-type SessionHistorySelectionSource = 'sidebar' | 'drawer' | 'memory-start'
+type SessionHistorySelectionSource = 'sidebar' | 'drawer' | 'session-history-start'
 
 /** 页面级微动效参数：短、轻、低位移。 */
 const softTransition = { duration: 0.22, ease: 'easeOut' } as const
@@ -53,17 +54,7 @@ const focusedInputShadow = [
 
 const MIN_MESSAGE_ENTRY_DELAY = 0.08
 const MAX_MESSAGE_ENTRY_DELAY = 0.2
-const MEMORY_OPEN_KEY = 'hermes-cashew:memory-open'
-
-/**
- * 当前本地时间是否处于午夜氛围时段。
- *
- * @returns 0-5 点返回 true，其余时间返回 false
- */
-function isMidnightHour(): boolean {
-  const hour = new Date().getHours()
-  return hour >= 0 && hour <= 5
-}
+const SESSION_HISTORY_OPEN_KEY = 'hermes-cashew:session-history-open'
 
 /**
  * 为消息 key 生成稳定的错落入场延迟。
@@ -95,7 +86,7 @@ function getMessageAnimationKey(message: ChatMessage, index: number): string {
 /**
  * 聊天页面：默认即 Fresh Conversation，直接打字即开新对话（首条消息时才建会话）。
  *
- * 空态在存在历史时多出一个「继续上次」按钮；更早的会话通过“记忆”按钮展开历史侧栏。
+ * 空态在存在历史时多出一个「继续上次」按钮；更早的会话通过“会话历史”按钮展开历史侧栏。
  *
  * @returns 聊天页 React 元素
  */
@@ -106,9 +97,9 @@ export function Chat(): React.JSX.Element {
   const [hasActiveSession, setHasActiveSession] = useState(false)
   const [backendHealth, setBackendHealth] = useState<BackendHealth>('idle')
   const [isInputFocused, setIsInputFocused] = useState(false)
-  const [isMidnight, setIsMidnight] = useState(() => isMidnightHour())
+  const isMidnight = useMidnightHour()
   const [initialHistoryCount, setInitialHistoryCount] = useState(0)
-  const [isMemoryOpen, setIsMemoryOpen] = useState(() => readMemoryOpenPreference())
+  const [isSessionHistoryOpen, setIsSessionHistoryOpen] = useState(() => readSessionHistoryOpenPreference())
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth)
   const [drawerMode, setDrawerMode] = useState<SessionHistoryDrawerMode | null>(null)
   const [hasSidebarBeenManuallyClosed, setHasSidebarBeenManuallyClosed] = useState(false)
@@ -165,9 +156,9 @@ export function Chat(): React.JSX.Element {
   } = conversation
 
   const clickSurface = getSessionHistoryClickSurface(viewportWidth)
-  const isSessionHistorySidebarOpen = isMemoryOpen && clickSurface === 'sidebar'
-  const isPersistentMemoryDrawerOpen = isMemoryOpen && clickSurface === 'drawer'
-  const isSessionHistoryDrawerOpen = drawerMode !== null || isPersistentMemoryDrawerOpen
+  const isSessionHistorySidebarOpen = isSessionHistoryOpen && clickSurface === 'sidebar'
+  const isPersistentSessionHistoryDrawerOpen = isSessionHistoryOpen && clickSurface === 'drawer'
+  const isSessionHistoryDrawerOpen = drawerMode !== null || isPersistentSessionHistoryDrawerOpen
   const isSessionHistoryVisible = isSessionHistorySidebarOpen || isSessionHistoryDrawerOpen
   const canShowHoverTrigger =
     !isSessionHistoryDrawerOpen &&
@@ -207,13 +198,13 @@ export function Chat(): React.JSX.Element {
     setMessages([])
     setInitialHistoryCount(0)
     setHasActiveSession(false)
-    setMemoryOpenPreference(setIsMemoryOpen, false)
+    setSessionHistoryOpenPreference(setIsSessionHistoryOpen, false)
     setDrawerMode(null)
     window.setTimeout(() => inputRef.current?.focus(), 0)
   }, [ready, clearCombinedError, resetActiveSession, setMessages])
 
   const continueSession = useCallback(
-    (storedId: string, source: SessionHistorySelectionSource = 'memory-start'): void => {
+    (storedId: string, source: SessionHistorySelectionSource = 'session-history-start'): void => {
       if (!ready) return
       setSessionError(null)
       clearCombinedError()
@@ -226,7 +217,7 @@ export function Chat(): React.JSX.Element {
           if (source === 'sidebar') {
             setDrawerMode(null)
           } else {
-            setMemoryOpenPreference(setIsMemoryOpen, false)
+            setSessionHistoryOpenPreference(setIsSessionHistoryOpen, false)
             setDrawerMode(null)
           }
           window.setTimeout(() => inputRef.current?.focus(), 0)
@@ -244,14 +235,6 @@ export function Chat(): React.JSX.Element {
   useEffect(() => {
     if (ready) refreshSessions()
   }, [ready, refreshSessions])
-
-  // ── 午夜氛围：分钟级检查即可，跨 0/6 点时自动切换色温和节奏。 ──
-  useEffect(() => {
-    const updateMidnight = (): void => setIsMidnight(isMidnightHour())
-    updateMidnight()
-    const interval = window.setInterval(updateMidnight, 60_000)
-    return () => window.clearInterval(interval)
-  }, [])
 
   // ── 响应式布局：根据窗口宽度在 Sidebar 和 Drawer 之间切换。 ──
   useEffect(() => {
@@ -291,6 +274,7 @@ export function Chat(): React.JSX.Element {
   const idleBreathingDuration = isMidnight ? 6 : 4
   const latestSession = sessions[0]
   const topControlsRowClass = getTopControlsRowClass()
+  const trafficLightInsetPx = getTrafficLightInsetPx()
   const shouldShowContinueLast = shouldShowContinueLastFn({
     ready,
     hasActiveSession,
@@ -299,18 +283,18 @@ export function Chat(): React.JSX.Element {
     sessionsCount: sessions.length
   })
 
-  const handleMemoryToggle = useCallback((): void => {
+  const handleSessionHistoryToggle = useCallback((): void => {
     if (clickSurface === 'drawer') {
       const shouldOpenDrawer = !isSessionHistoryDrawerOpen
       setDrawerMode(shouldOpenDrawer ? 'click' : null)
-      if (isMemoryOpen) setMemoryOpenPreference(setIsMemoryOpen, false)
+      if (isSessionHistoryOpen) setSessionHistoryOpenPreference(setIsSessionHistoryOpen, false)
       return
     }
 
     setDrawerMode(null)
-    setMemoryOpenPreference(setIsMemoryOpen, !isMemoryOpen)
-    setHasSidebarBeenManuallyClosed(isMemoryOpen)
-  }, [clickSurface, isMemoryOpen, isSessionHistoryDrawerOpen])
+    setSessionHistoryOpenPreference(setIsSessionHistoryOpen, !isSessionHistoryOpen)
+    setHasSidebarBeenManuallyClosed(isSessionHistoryOpen)
+  }, [clickSurface, isSessionHistoryOpen, isSessionHistoryDrawerOpen])
 
   const scheduleHoverDrawerOpen = useCallback((): void => {
     if (!canShowHoverTrigger) return
@@ -380,21 +364,22 @@ export function Chat(): React.JSX.Element {
     <div
       className={`time-atmosphere relative flex min-h-0 min-w-0 flex-1 bg-background text-foreground${isMidnight ? ' midnight-atmosphere' : ''}`}
     >
-      <div className={topControlsRowClass}>
+      <div className={topControlsRowClass} style={{ left: trafficLightInsetPx }}>
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="sm"
-            className="app-no-drag h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-            onClick={handleMemoryToggle}
+            className="app-no-drag h-7 px-2 text-muted-foreground hover:text-foreground"
+            onClick={handleSessionHistoryToggle}
             aria-pressed={isSessionHistoryVisible}
+            aria-label="会话历史"
+            title={isSessionHistoryVisible ? '收起会话历史' : '展开会话历史'}
           >
             {isSessionHistoryVisible ? (
               <PanelLeftClose className="size-3.5" />
             ) : (
-              <History className="size-3.5" />
+              <PanelLeftOpen className="size-3.5" />
             )}
-            记忆
           </Button>
           <CashewPresenceIndicator presence={presence} reducedMotion={reducedMotion} />
         </div>
@@ -511,7 +496,7 @@ export function Chat(): React.JSX.Element {
                   ready={ready}
                   onContinueLast={
                     shouldShowContinueLast && latestSession
-                      ? () => continueSession(latestSession.id, 'memory-start')
+                      ? () => continueSession(latestSession.id, 'session-history-start')
                       : undefined
                   }
                   continueLastDisabled={!ready || isSessionLoading}
@@ -627,52 +612,21 @@ export function Chat(): React.JSX.Element {
 }
 
 /**
- * 展示 Cashew Presence 的小型状态胶囊。
- *
- * @param props - presence 状态与 reduced-motion 偏好
- * @returns 顶部状态提示元素
- */
-function CashewPresenceIndicator({
-  presence,
-  reducedMotion
-}: {
-  presence: CashewPresenceState
-  reducedMotion: boolean | null
-}): React.JSX.Element {
-  const toneClass = {
-    warm: 'bg-primary/12 text-foreground',
-    muted: 'bg-muted text-muted-foreground',
-    active: 'bg-accent/75 text-accent-foreground',
-    danger: 'bg-destructive/12 text-destructive'
-  }[presence.tone]
-
-  return (
-    <span
-      className={`app-no-drag inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs ${toneClass}`}
-      aria-label={`Cashew Presence: ${presence.label}`}
-    >
-      <motion.span
-        className="size-1.5 rounded-full bg-current"
-        animate={
-          presence.breathes && !reducedMotion
-            ? { opacity: [0.45, 1, 0.45], scale: [1, 1.22, 1] }
-            : undefined
-        }
-        transition={{ duration: 2.1, repeat: Infinity, ease: 'easeInOut' }}
-        aria-hidden="true"
-      />
-      {presence.label}
-    </span>
-  )
-}
-
-/**
  * 读取用户上次是否展开了 Session History。
  *
  * @returns 本地偏好存在且为 true 时返回 true
  */
-function readMemoryOpenPreference(): boolean {
-  return window.localStorage.getItem(MEMORY_OPEN_KEY) === 'true'
+function readSessionHistoryOpenPreference(): boolean {
+  const stored = window.localStorage.getItem(SESSION_HISTORY_OPEN_KEY)
+  if (stored !== null) return stored === 'true'
+  // 一次性兼容迁移：旧 key 'hermes-cashew:memory-open' → SESSION_HISTORY_OPEN_KEY
+  const legacy = window.localStorage.getItem('hermes-cashew:memory-open')
+  if (legacy !== null) {
+    window.localStorage.setItem(SESSION_HISTORY_OPEN_KEY, legacy)
+    window.localStorage.removeItem('hermes-cashew:memory-open')
+    return legacy === 'true'
+  }
+  return false
 }
 
 /**
@@ -682,11 +636,11 @@ function readMemoryOpenPreference(): boolean {
  * @param next - 是否展开 Session History
  * @returns 无返回值
  */
-function setMemoryOpenPreference(
+function setSessionHistoryOpenPreference(
   setOpen: React.Dispatch<React.SetStateAction<boolean>>,
   next: boolean
 ): void {
-  window.localStorage.setItem(MEMORY_OPEN_KEY, String(next))
+  window.localStorage.setItem(SESSION_HISTORY_OPEN_KEY, String(next))
   setOpen(next)
 }
 

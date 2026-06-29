@@ -1,5 +1,9 @@
 import { Outlet } from 'react-router-dom'
-import { getTrafficLightAvoidanceClass, getWindowDragRegionClass } from '@/lib/window-chrome'
+import {
+  getTrafficLightAvoidanceClass,
+  getTrafficLightInsetPx,
+  getWindowDragRegionClass
+} from '@/lib/window-chrome'
 
 /**
  * 应用根布局：提供窗口拖拽背景、macOS 三点避让区和子路由渲染出口。
@@ -13,6 +17,7 @@ import { getTrafficLightAvoidanceClass, getWindowDragRegionClass } from '@/lib/w
 export function Layout(): React.JSX.Element {
   const dragRegionClass = getWindowDragRegionClass()
   const avoidanceClass = getTrafficLightAvoidanceClass()
+  const trafficLightInsetPx = getTrafficLightInsetPx()
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-background text-foreground">
@@ -23,7 +28,8 @@ export function Layout(): React.JSX.Element {
       />
       {/* macOS 三点避让区：只占左上角，不影响其余顶部内容。 */}
       <div
-        className={`pointer-events-none absolute left-0 top-0 z-50 ${avoidanceClass}`}
+        className={avoidanceClass}
+        style={{ width: trafficLightInsetPx }}
         aria-hidden="true"
       />
       <Outlet />

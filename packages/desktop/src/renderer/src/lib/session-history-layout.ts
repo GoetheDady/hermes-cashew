@@ -23,7 +23,7 @@ export interface SessionHistoryHoverTriggerInput {
 }
 
 /**
- * 根据窗口宽度决定点击“记忆”时打开哪种 Session History 形态。
+ * 根据窗口宽度决定点击“会话历史”时打开哪种 Session History 形态。
  *
  * @param viewportWidth - 当前窗口宽度，单位 px
  * @returns 窄窗口返回 Drawer，大窗口返回 Sidebar

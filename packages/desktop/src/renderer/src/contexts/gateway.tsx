@@ -2,6 +2,7 @@ import { createContext, useContext, useLayoutEffect, useRef } from 'react'
 import { Outlet } from 'react-router-dom'
 import { GatewayClient } from '@/lib/gateway-client'
 import { useGatewayStore } from '@/stores/use-gateway-store'
+import { useConfigStore } from '@/stores/use-config-store'
 
 /** 后端 WS 代理地址。 */
 const BACKEND_WS = 'ws://localhost:8765/ws'
@@ -34,6 +35,12 @@ export function GatewayProvider(): React.JSX.Element {
 
     client.on('gateway.ready', () => {
       useGatewayStore.setState({ ready: true })
+      // 握手完成后拉取模型列表与推理配置。配置是应用级状态，放在
+      // 常驻 Provider 而非 Settings 页，避免路由切换导致 providers 丢失、
+      // 设置页模型选择永远停在「加载中」。每次 ready（含重连）都刷新一次。
+      const config = useConfigStore.getState()
+      void config.fetchModelOptions(client).catch(() => {})
+      void config.fetchReasoningConfig(client).catch(() => {})
     })
 
     client.on('error', (evt) => {
