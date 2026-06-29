@@ -126,6 +126,7 @@ export interface SessionSummary {
   title: string
   preview: string
   started_at: number
+  last_activity_at?: number
   message_count: number
   source: string
 }

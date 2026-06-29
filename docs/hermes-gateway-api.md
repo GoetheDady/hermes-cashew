@@ -53,6 +53,7 @@
             "title": "我的对话",
             "preview": "前几个字符...",
             "started_at": 1735718400,
+            "last_activity_at": 1735720200,
             "message_count": 42,
             "source": "tui"
         }

@@ -28,6 +28,10 @@ _Avoid_: dashboard reconnect, process restart, token refresh
 A sidebar list of resumable conversation summaries returned by the Hermes gateway. It is not the full message transcript for a session.
 _Avoid_: transcript, message log, chat archive
 
+**Session Activity Time**:
+The most recent time a Session History item was active, preferably from the latest message timestamp and falling back to the session start time when needed. It is the time shown in memory lists, not necessarily when the session was created.
+_Avoid_: creation time, start label, message count
+
 **Session History Sidebar**:
 The persistent side-by-side form of Session History. It is opened by an explicit user click and may reduce the chat canvas width while it remains open.
 _Avoid_: temporary drawer, hover preview, overlay history

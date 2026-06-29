@@ -2,10 +2,10 @@ import type { SessionSummary } from '@hermes/shared'
 import type { ConnectionState } from '@/lib/gateway-client'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { StatusBadge } from '@/components/status-badge'
-import { SESSION_SIDEBAR_CLASS } from '@/lib/session-sidebar-layout'
+import { getSessionHistoryItemClass, SESSION_SIDEBAR_CLASS } from '@/lib/session-sidebar-layout'
+import { formatSessionActivityTime } from '@/lib/session-activity-time'
 import { Clock, LoaderCircle, MessageSquare, Plus } from 'lucide-react'
 
 export interface SessionSidebarProps {
@@ -32,6 +32,9 @@ export interface SessionSidebarProps {
 
 /**
  * 左侧会话历史栏，包含新建入口、分组标题、可滚动历史列表和连接状态。
+ *
+ * @param props - 会话历史栏渲染所需状态与事件回调
+ * @returns Session History 侧边栏元素
  */
 export function SessionSidebar({
   sessions,
@@ -74,9 +77,9 @@ export function SessionSidebar({
               type="button"
               onClick={onToggleExcludeCron}
               className={[
-                'inline-flex size-5 items-center justify-center rounded transition-colors',
+                'inline-flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground',
                 excludeCron
-                  ? 'bg-accent text-accent-foreground'
+                  ? 'text-primary/75 hover:text-primary'
                   : 'text-muted-foreground hover:text-foreground'
               ].join(' ')}
               title={
@@ -87,9 +90,9 @@ export function SessionSidebar({
               <Clock className="size-3" />
             </button>
             {sessionsTotal > 0 && (
-              <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[0.7rem]">
+              <span className="text-[0.7rem] tabular-nums text-muted-foreground/70">
                 {sessionsTotal}
-              </Badge>
+              </span>
             )}
           </div>
         </div>
@@ -136,6 +139,12 @@ export function SessionSidebar({
   )
 }
 
+/**
+ * 渲染单条会话历史记录。
+ *
+ * @param props - 会话摘要、选中态、禁用态与选择回调
+ * @returns 可点击选择的会话历史条目
+ */
 function SessionHistoryItem({
   session,
   isActive,
@@ -149,22 +158,13 @@ function SessionHistoryItem({
 }): React.JSX.Element {
   const title = session.title?.trim() || session.preview?.trim() || '未命名会话'
   const preview = session.preview?.trim() || '还没有可显示的消息预览'
-  const meta =
-    Number.isFinite(session.message_count) && session.message_count > 0
-      ? `${session.message_count} 条`
-      : ''
+  const activityTime = formatSessionActivityTime(session.last_activity_at ?? session.started_at)
 
   return (
     <Button
       variant="ghost"
       size="sm"
-      className={[
-        'h-auto min-h-16 w-full items-start justify-start whitespace-normal rounded-md px-2.5 py-2 text-left',
-        'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-        isActive
-          ? 'border border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
-          : 'border border-transparent'
-      ].join(' ')}
+      className={getSessionHistoryItemClass(isActive)}
       onClick={() => onSelect(session.id)}
       disabled={disabled}
       title={title}
@@ -173,9 +173,11 @@ function SessionHistoryItem({
       <span className="flex min-w-0 w-full flex-1 flex-col gap-1 overflow-hidden">
         <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
           <span className="min-w-0 truncate text-[0.82rem] font-medium leading-5">{title}</span>
-          {meta && <span className="shrink-0 text-[0.68rem] text-muted-foreground">{meta}</span>}
+          <span className="shrink-0 text-[0.68rem] tabular-nums text-muted-foreground/75">
+            {activityTime}
+          </span>
         </span>
-        <span className="line-clamp-2 min-w-0 overflow-hidden break-all text-[0.72rem] leading-4 text-muted-foreground">
+        <span className="line-clamp-2 min-w-0 overflow-hidden break-all text-[0.72rem] leading-4 text-muted-foreground/78">
           {preview}
         </span>
       </span>
@@ -183,6 +185,11 @@ function SessionHistoryItem({
   )
 }
 
+/**
+ * 渲染没有历史会话时的空状态提示。
+ *
+ * @returns 空会话历史提示元素
+ */
 function EmptySessionHistory(): React.JSX.Element {
   return (
     <div className="mx-1 rounded-md border border-dashed border-sidebar-border bg-background/35 px-3 py-5 text-center">

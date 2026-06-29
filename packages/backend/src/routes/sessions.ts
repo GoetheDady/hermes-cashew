@@ -32,6 +32,8 @@ function querySessions(
         s.id,
         s.title,
         s.started_at,
+        COALESCE((SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id), s.started_at)
+          AS last_activity_at,
         s.message_count,
         s.source,
         (SELECT substr(m.content, 1, 200) FROM messages m
@@ -39,13 +41,14 @@ function querySessions(
          ORDER BY m.timestamp ASC LIMIT 1) AS preview
       FROM sessions s
       ${whereClause}
-      ORDER BY s.started_at DESC
+      ORDER BY last_activity_at DESC
       LIMIT ? OFFSET ?`
     )
     .all(...(excludeSource ? [excludeSource, limit, offset] : [limit, offset])) as Array<{
     id: string
     title: string | null
     started_at: number
+    last_activity_at: number
     message_count: number
     source: string
     preview: string | null
@@ -56,6 +59,7 @@ function querySessions(
     title: r.title?.trim() || '',
     preview: r.preview?.trim() || '',
     started_at: r.started_at,
+    last_activity_at: r.last_activity_at ?? r.started_at,
     message_count: r.message_count ?? 0,
     source: r.source ?? ''
   }))
@@ -65,6 +69,11 @@ function querySessions(
 
 /**
  * 发送 JSON 响应。
+ *
+ * @param res - Node HTTP 响应对象
+ * @param status - HTTP 状态码
+ * @param body - 要序列化为 JSON 的响应体
+ * @returns 无返回值，直接写入响应流
  */
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' })
@@ -77,6 +86,7 @@ function json(res: ServerResponse, status: number, body: unknown): void {
  * @param reqUrl - 请求 URL
  * @param res - 响应对象
  * @param db - 只读 state.db 实例（null 时返回空列表）
+ * @returns 无返回值，直接写入 HTTP 响应
  */
 export function handleListSessions(
   reqUrl: string,
