@@ -20,6 +20,7 @@ import {
   SESSION_HISTORY_DRAWER_OPEN_DELAY_MS,
   SESSION_HISTORY_HOVER_TRIGGER_CLASS
 } from '@/lib/session-history-layout'
+import { shouldShowContinueLast as shouldShowContinueLastFn } from '@/lib/fresh-conversation'
 import { getTopControlsRowClass } from '@/lib/window-chrome'
 import { History, PanelLeftClose, RotateCcw, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -92,20 +93,17 @@ function getMessageAnimationKey(message: ChatMessage, index: number): string {
 }
 
 /**
- * 聊天页面：先给出轻量记忆入口，再进入 Hermes 对话。
+ * 聊天页面：默认即 Fresh Conversation，直接打字即开新对话（首条消息时才建会话）。
  *
- * Session History 默认不占据主表面；用户可以继续最近会话、开启新会话，
- * 或通过“记忆”按钮临时展开历史侧栏。
+ * 空态在存在历史时多出一个「继续上次」按钮；更早的会话通过“记忆”按钮展开历史侧栏。
  *
  * @returns 聊天页 React 元素
  */
 export function Chat(): React.JSX.Element {
   const navigate = useNavigate()
   const [input, setInput] = useState('')
-  const [isSessionStarting, setIsSessionStarting] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [hasActiveSession, setHasActiveSession] = useState(false)
-  const [sessionRetryKey, setSessionRetryKey] = useState(0)
   const [backendHealth, setBackendHealth] = useState<BackendHealth>('idle')
   const [isInputFocused, setIsInputFocused] = useState(false)
   const [isMidnight, setIsMidnight] = useState(() => isMidnightHour())
@@ -126,7 +124,6 @@ export function Chat(): React.JSX.Element {
 
   // ── 业务 hooks ──
   const { clientRef, conn, ready, error: gatewayError, reconnect, clearError } = useGateway()
-  const conversation = useConversation(clientRef, sessionIdRef, ready)
   const {
     sessions,
     sessionsTotal,
@@ -136,13 +133,26 @@ export function Chat(): React.JSX.Element {
     activeStoredId,
     isSessionLoading,
     excludeCron,
-    newSession,
+    ensureSession,
+    resetActiveSession,
     selectSession,
     refreshSessions,
     loadMoreSessions,
     toggleExcludeCron,
     finishSessionLoading
   } = useSessions(clientRef, sessionIdRef)
+  /**
+   * 懒创建包装：首条消息发送时调用 ensureSession() 按需建会话，
+   * 成功后标记已进入活动会话态，使空态的「继续上次」按钮随后隐藏。
+   *
+   * @returns 会话就绪后 resolve；create 失败则 reject，由 sendMessage 回滚
+   */
+  const ensureSessionForSend = useCallback((): Promise<void> => {
+    return ensureSession().then(() => {
+      setHasActiveSession(true)
+    })
+  }, [ensureSession])
+  const conversation = useConversation(clientRef, sessionIdRef, ready, ensureSessionForSend)
 
   const {
     messages,
@@ -174,7 +184,7 @@ export function Chat(): React.JSX.Element {
   const presence = getCashewPresence({
     conn,
     ready,
-    isSessionLoading: isSessionStarting || isSessionLoading,
+    isSessionLoading: isSessionLoading,
     hasActiveSession,
     isStreaming,
     hasActiveToolCall: activeToolCall,
@@ -188,30 +198,23 @@ export function Chat(): React.JSX.Element {
     setSessionError(null)
   }, [clearError, clearSendError])
 
-  const startNewSession = useCallback((): void => {
-    if (!ready || isSessionStarting) return
-    setIsSessionStarting(true)
+  /** 侧栏「新对话」：重置回 Fresh Conversation 空态，不调用后端（见 ADR-0001）。 */
+  const resetToEmpty = useCallback((): void => {
+    if (!ready) return
     setSessionError(null)
     clearCombinedError()
-    newSession()
-      .then((initialMessages) => {
-        setInitialHistoryCount(initialMessages.length)
-        setMessages(initialMessages)
-        setHasActiveSession(true)
-        setMemoryOpenPreference(setIsMemoryOpen, false)
-        setDrawerMode(null)
-        window.setTimeout(() => inputRef.current?.focus(), 0)
-      })
-      .catch((e: Error) => {
-        setHasActiveSession(false)
-        setSessionError(`新建对话失败：${e.message}`)
-      })
-      .finally(() => setIsSessionStarting(false))
-  }, [ready, isSessionStarting, clearCombinedError, newSession, setMessages])
+    resetActiveSession()
+    setMessages([])
+    setInitialHistoryCount(0)
+    setHasActiveSession(false)
+    setMemoryOpenPreference(setIsMemoryOpen, false)
+    setDrawerMode(null)
+    window.setTimeout(() => inputRef.current?.focus(), 0)
+  }, [ready, clearCombinedError, resetActiveSession, setMessages])
 
   const continueSession = useCallback(
     (storedId: string, source: SessionHistorySelectionSource = 'memory-start'): void => {
-      if (!ready || isSessionStarting) return
+      if (!ready) return
       setSessionError(null)
       clearCombinedError()
       selectSession(storedId)
@@ -233,30 +236,14 @@ export function Chat(): React.JSX.Element {
           setSessionError(`恢复会话失败：${e.message}`)
         })
     },
-    [ready, isSessionStarting, clearCombinedError, selectSession, finishSessionLoading, setMessages]
+    [ready, clearCombinedError, selectSession, finishSessionLoading, setMessages]
   )
 
   // ── 初始化：ready 后先查看 Session History；没有历史时才自动创建新对话。 ──
+  // ── 初始化：ready 后拉取 Session History，用于「继续上次」按钮。空态即默认，不再自动建会话（见 ADR-0001）。 ──
   useEffect(() => {
     if (ready) refreshSessions()
   }, [ready, refreshSessions])
-
-  useEffect(() => {
-    if (!ready || hasActiveSession || isSessionStarting || sessionError) return
-    if (!hasLoadedSessions || sessions.length > 0) return
-    // 避开 effect 同步 setState；自动创建只需排到当前渲染提交之后。
-    const timer = window.setTimeout(startNewSession, 0)
-    return () => window.clearTimeout(timer)
-  }, [
-    ready,
-    hasActiveSession,
-    isSessionStarting,
-    sessionError,
-    hasLoadedSessions,
-    sessions.length,
-    startNewSession,
-    sessionRetryKey
-  ])
 
   // ── 午夜氛围：分钟级检查即可，跨 0/6 点时自动切换色温和节奏。 ──
   useEffect(() => {
@@ -292,8 +279,7 @@ export function Chat(): React.JSX.Element {
   }, [messages])
 
   const hasConnectionProblem = conn === 'closed' || conn === 'error'
-  const canSend =
-    ready && hasActiveSession && !isSessionStarting && !isStreaming && input.trim() !== ''
+  const canSend = ready && !isSessionLoading && !isStreaming && input.trim() !== ''
   const connectionText =
     hasConnectionProblem && backendHealth === 'unavailable'
       ? '本地 Hermes 后端不可用，请确认后端已启动'
@@ -301,21 +287,17 @@ export function Chat(): React.JSX.Element {
         ? '连接已断开'
         : null
   const statusText = sessionError ?? gatewayError ?? conversationError ?? connectionText
-  const placeholder = !ready
-    ? '正在连接 Hermes…'
-    : isSessionStarting
-      ? '正在开启新对话…'
-      : '问 Hermes 点什么…'
+  const placeholder = !ready ? '正在连接 Hermes…' : '问 Hermes 点什么…'
   const idleBreathingDuration = isMidnight ? 6 : 4
   const latestSession = sessions[0]
   const topControlsRowClass = getTopControlsRowClass()
-  const shouldShowMemoryStart =
-    ready &&
-    !hasActiveSession &&
-    !isSessionStarting &&
-    !isSessionLoading &&
-    hasLoadedSessions &&
-    sessions.length > 0
+  const shouldShowContinueLast = shouldShowContinueLastFn({
+    ready,
+    hasActiveSession,
+    isSessionLoading,
+    hasLoadedSessions,
+    sessionsCount: sessions.length
+  })
 
   const handleMemoryToggle = useCallback((): void => {
     if (clickSurface === 'drawer') {
@@ -454,10 +436,10 @@ export function Chat(): React.JSX.Element {
               activeStoredId={activeStoredId}
               ready={ready}
               isStreaming={isStreaming}
-              isSessionLoading={isSessionLoading || isSessionStarting}
+              isSessionLoading={isSessionLoading}
               conn={conn}
               excludeCron={excludeCron}
-              onNewSession={startNewSession}
+              onNewSession={resetToEmpty}
               onSelectSession={(storedId) => continueSession(storedId, 'sidebar')}
               onLoadMore={loadMoreSessions}
               onReconnect={reconnect}
@@ -497,10 +479,10 @@ export function Chat(): React.JSX.Element {
               activeStoredId={activeStoredId}
               ready={ready}
               isStreaming={isStreaming}
-              isSessionLoading={isSessionLoading || isSessionStarting}
+              isSessionLoading={isSessionLoading}
               conn={conn}
               excludeCron={excludeCron}
-              onNewSession={startNewSession}
+              onNewSession={resetToEmpty}
               onSelectSession={(storedId) => continueSession(storedId, 'drawer')}
               onLoadMore={loadMoreSessions}
               onReconnect={reconnect}
@@ -524,18 +506,16 @@ export function Chat(): React.JSX.Element {
         <div className="app-no-drag relative min-h-0 flex-1 px-3">
           <ScrollArea className="h-full">
             <div className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-4">
-              {shouldShowMemoryStart && latestSession ? (
-                <MemoryStart
-                  title={
-                    latestSession.title?.trim() || latestSession.preview?.trim() || '最近的会话'
+              {messages.length === 0 ? (
+                <EmptyConversation
+                  ready={ready}
+                  onContinueLast={
+                    shouldShowContinueLast && latestSession
+                      ? () => continueSession(latestSession.id, 'memory-start')
+                      : undefined
                   }
-                  preview={latestSession.preview?.trim() || '继续上一次和 Hermes 的对话'}
-                  disabled={!ready || isSessionLoading || isSessionStarting}
-                  onContinue={() => continueSession(latestSession.id, 'memory-start')}
-                  onNew={startNewSession}
+                  continueLastDisabled={!ready || isSessionLoading}
                 />
-              ) : messages.length === 0 ? (
-                <EmptyConversation ready={ready} isSessionStarting={isSessionStarting} />
               ) : (
                 <div className="space-y-3">
                   {messages.map((m, i) => {
@@ -589,13 +569,10 @@ export function Chat(): React.JSX.Element {
                   variant="ghost"
                   size="sm"
                   className="h-7 shrink-0 gap-1.5 px-2 text-xs"
-                  onClick={() => {
-                    setSessionError(null)
-                    setSessionRetryKey((key) => key + 1)
-                  }}
+                  onClick={() => setSessionError(null)}
                 >
                   <RotateCcw className="size-3" />
-                  重试开启
+                  重试
                 </Button>
               ) : null}
             </motion.div>
@@ -634,7 +611,7 @@ export function Chat(): React.JSX.Element {
                 rows={1}
                 placeholder={placeholder}
                 className="min-h-0 resize-none border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
-                disabled={!ready || isSessionStarting || !hasActiveSession}
+                disabled={!ready || isSessionLoading}
               />
               <div className="flex items-end justify-end gap-2 pt-1">
                 <Button size="sm" onClick={handleSend} disabled={!canSend} className="shrink-0">
@@ -644,46 +621,6 @@ export function Chat(): React.JSX.Element {
             </motion.div>
           </div>
         </footer>
-      </div>
-    </div>
-  )
-}
-
-/**
- * 渲染第一次进入时的最近会话选择。
- *
- * @param props - 最近会话摘要、禁用态和用户动作
- * @returns 继续上次或新建会话的轻量入口
- */
-function MemoryStart({
-  title,
-  preview,
-  disabled,
-  onContinue,
-  onNew
-}: {
-  title: string
-  preview: string
-  disabled: boolean
-  onContinue: () => void
-  onNew: () => void
-}): React.JSX.Element {
-  return (
-    <div className="flex flex-1 items-center justify-center py-16">
-      <div className="w-full max-w-md rounded-xl border border-border/80 bg-card/72 px-4 py-4 shadow-sm">
-        <div className="space-y-1.5">
-          <p className="text-xs font-medium text-muted-foreground">最近的记忆</p>
-          <h2 className="truncate text-base font-semibold text-foreground">{title}</h2>
-          <p className="line-clamp-2 text-sm leading-5 text-muted-foreground">{preview}</p>
-        </div>
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onNew} disabled={disabled}>
-            新对话
-          </Button>
-          <Button size="sm" onClick={onContinue} disabled={disabled}>
-            继续上次
-          </Button>
-        </div>
       </div>
     </div>
   )

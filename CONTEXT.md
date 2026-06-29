@@ -40,6 +40,14 @@ _Avoid_: temporary drawer, hover preview, overlay history
 The temporary overlay form of Session History. It does not change the chat canvas width; it appears for narrow-window access or when a large-window user has manually closed the sidebar and hovers the left edge, then closes after leaving or completing a history selection.
 _Avoid_: persistent sidebar, layout column, full navigation page
 
+**Fresh Conversation**:
+A new conversation started implicitly on entry or via 新对话, held only in the renderer until the first message is sent. It is not persisted to Session History until the first prompt is submitted, so abandoning it leaves no empty session behind.
+_Avoid_: eager session, pre-created conversation, empty saved session
+
+**Continue Last**:
+The single explicit entry affordance that resumes the most recent prior session from Session History. It is shown only while a Fresh Conversation has not yet received its first message, and complements — rather than replaces — the Session History sidebar for reaching older sessions.
+_Avoid_: resume dialog, session picker, history launcher
+
 **Traffic Light Avoidance Zone**:
 The small top-left rectangle reserved for macOS window controls when the native titlebar is hidden. It protects only the traffic-light buttons instead of pushing the whole app content downward.
 _Avoid_: full titlebar gutter, global top padding

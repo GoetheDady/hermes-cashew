@@ -7,8 +7,7 @@ import type {
   SessionResumeResult,
   SessionSummary
 } from '@hermes/shared'
-import { storedMessagesToChatMessages, type GatewayMessage } from '@hermes/shared'
-import { textPart } from '@hermes/shared'
+import { storedMessagesToChatMessages } from '@hermes/shared'
 import { GatewayClient } from '@/lib/gateway-client'
 
 /** 后端 HTTP 基址，用于拉取会话列表与历史消息（REST 代理）。 */
@@ -34,8 +33,10 @@ export interface UseSessionsResult {
   isSessionLoading: boolean
   /** 是否排除定时任务（cron）会话。 */
   excludeCron: boolean
-  /** 新建会话并切换。返回 Promise，resolve 时携带消息列表（用于设置到对话区）。 */
-  newSession: () => Promise<ChatMessage[]>
+  /** 懒创建：若运行时 session_id 为空则 `session.create` 并登记，否则空操作。 */
+  ensureSession: () => Promise<void>
+  /** 重置回 Fresh Conversation 空态：清空运行时/存储会话 id，不调用后端。 */
+  resetActiveSession: () => void
   /** 切换到某个历史会话。返回 Promise，resolve 时携带消息列表。 */
   selectSession: (storedId: string) => Promise<ChatMessage[] | undefined>
   /** 刷新会话列表（重置到第一页）。 */
@@ -116,9 +117,10 @@ export function useSessions(
     fetchSessions(false)
   }, [fetchSessions, isLoadingMore, hasMoreSessions])
 
-  const newSession = useCallback((): Promise<ChatMessage[]> => {
+  const ensureSession = useCallback((): Promise<void> => {
     const client = clientRef.current
-    if (!client) return Promise.resolve([])
+    // 懒创建不变式：已有运行时会话则不重复创建（见 ADR-0001）。
+    if (!client || sessionIdRef.current !== '') return Promise.resolve()
     return client
       .request<SessionCreateResult>('session.create', {
         source: 'hermes-cashew',
@@ -129,13 +131,18 @@ export function useSessions(
         setActiveStoredId(res.stored_session_id ?? '')
         setIsSessionLoading(false)
         refreshSessions()
-        return mapHistory(res.messages)
       })
       .catch((e: Error) => {
         setIsSessionLoading(false)
         throw e
       })
   }, [clientRef, sessionIdRef, refreshSessions])
+
+  const resetActiveSession = useCallback((): void => {
+    sessionIdRef.current = ''
+    setActiveStoredId('')
+    setIsSessionLoading(false)
+  }, [sessionIdRef])
 
   const selectSession = useCallback(
     (storedId: string): Promise<ChatMessage[] | undefined> => {
@@ -194,22 +201,12 @@ export function useSessions(
     activeStoredId,
     isSessionLoading,
     excludeCron,
-    newSession,
+    ensureSession,
+    resetActiveSession,
     selectSession,
     refreshSessions,
     loadMoreSessions,
     toggleExcludeCron,
     finishSessionLoading
   }
-}
-
-/**
- * 把网关回放的历史消息映射成界面用的对话消息。
- * 只保留用户与助手的可见文本，丢弃 tool / system 等噪声。
- */
-function mapHistory(history: GatewayMessage[] | undefined): ChatMessage[] {
-  if (!history) return []
-  return history
-    .filter((m) => (m.role === 'user' || m.role === 'assistant') && (m.text ?? '').trim() !== '')
-    .map((m) => ({ role: m.role as ChatMessage['role'], parts: [textPart(m.text ?? '')] }))
 }

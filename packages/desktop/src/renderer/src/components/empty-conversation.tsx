@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
+import { Button } from '@/components/ui/button'
 
 /** 页面级微动效参数：短、轻、低位移。 */
 const softTransition = { duration: 0.22, ease: 'easeOut' } as const
@@ -88,7 +89,11 @@ function BreathingGlow({
               }
         }
         transition={{ duration: 2.3, repeat: Infinity, ease: 'easeInOut' }}
-        style={isPrimary ? { backgroundColor: 'oklch(0.52 0.09 65 / 0.55)' } : { backgroundColor: 'oklch(0.5 0.03 62 / 0.6)' }}
+        style={
+          isPrimary
+            ? { backgroundColor: 'oklch(0.52 0.09 65 / 0.55)' }
+            : { backgroundColor: 'oklch(0.5 0.03 62 / 0.6)' }
+        }
       />
 
       {/* 内层核心圆点：1.4s 周期，快呼吸 */}
@@ -113,34 +118,33 @@ function BreathingGlow({
 export interface EmptyConversationProps {
   /** 网关握手是否已完成。 */
   ready: boolean
-  /** 是否正在创建新会话。 */
-  isSessionStarting: boolean
+  /** 提供时渲染「继续上次」按钮，点击恢复最近会话；省略则不显示。 */
+  onContinueLast?: () => void
+  /** 「继续上次」按钮的禁用态（如正在恢复会话时）。 */
+  continueLastDisabled?: boolean
 }
 
 /**
  * 空对话占位：时间感知问候 + 有机呼吸光晕。
  *
- * 页面极简——只有光晕和问候语。动态文案改为通过系统通知在空闲时弹出。
+ * 默认即 Fresh Conversation——用户直接打字即开启新对话（首条消息时才真正建会话）。
+ * 仅当存在可继续的历史时，多出一个安静的「继续上次」按钮。
  *
  * @param ready - 网关握手是否已完成
- * @param isSessionStarting - 当前新对话是否仍在创建中
+ * @param onContinueLast - 恢复最近会话的回调
+ * @param continueLastDisabled - 「继续上次」按钮是否禁用
  * @returns 空对话状态 React 元素
  */
 export function EmptyConversation({
   ready,
-  isSessionStarting
+  onContinueLast,
+  continueLastDisabled
 }: EmptyConversationProps): React.JSX.Element {
   const reducedMotion = useReducedMotion()
   const greeting = useTimeGreeting()
 
-  const statusText = !ready
-    ? '正在连接 Hermes…'
-    : isSessionStarting
-      ? '正在开启新对话…'
-      : greeting
-
-  const glowVariant: 'muted' | 'primary' =
-    !ready || isSessionStarting ? 'muted' : 'primary'
+  const statusText = !ready ? '正在连接 Hermes…' : greeting
+  const glowVariant: 'muted' | 'primary' = !ready ? 'muted' : 'primary'
 
   return (
     <motion.div
@@ -152,6 +156,17 @@ export function EmptyConversation({
       <div className="flex flex-col items-center gap-4 text-center">
         <BreathingGlow variant={glowVariant} reducedMotion={reducedMotion} />
         <span className="text-sm font-medium text-foreground">{statusText}</span>
+        {onContinueLast && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={onContinueLast}
+            disabled={continueLastDisabled}
+          >
+            继续上次
+          </Button>
+        )}
       </div>
     </motion.div>
   )

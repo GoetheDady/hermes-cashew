@@ -46,12 +46,14 @@ export interface UseConversationResult {
  * @param clientRef - GatewayClient 实例引用
  * @param sessionIdRef - 共享的运行时 session_id ref（由当前页面或 useSessions 写入，此处读取）
  * @param ready - 网关握手是否已完成（未完成时禁止发送）
+ * @param ensureSession - 懒创建：sessionIdRef 为空时按需 `session.create`（见 ADR-0001）
  * @param onMessageComplete - 每轮消息完成回调（通常用于刷新会话列表）
  */
 export function useConversation(
   clientRef: React.RefObject<GatewayClient | null>,
   sessionIdRef: React.MutableRefObject<string>,
   ready: boolean,
+  ensureSession: () => Promise<void>,
   onMessageComplete?: () => void
 ): UseConversationResult {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -166,8 +168,9 @@ export function useConversation(
       setSendError(null)
       setIsStreaming(true)
 
-      return client
-        .request('prompt.submit', { session_id: sessionIdRef.current, text })
+      // 懒创建：首条消息时才真正 session.create，再 prompt.submit（见 ADR-0001）。
+      return ensureSession()
+        .then(() => client.request('prompt.submit', { session_id: sessionIdRef.current, text }))
         .then(() => undefined)
         .catch((e: Error) => {
           setSendError(`发送失败：${e.message}`)
@@ -176,7 +179,7 @@ export function useConversation(
           throw e
         })
     },
-    [clientRef, ready]
+    [clientRef, ready, ensureSession]
   )
 
   return {
